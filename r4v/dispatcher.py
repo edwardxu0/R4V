@@ -1,23 +1,20 @@
 import multiprocessing as mp
 import os
-import resource
+import psutil
 import time
 
 from . import logging
 
 
-def get_memory_usage(pid):
-    memory = 0
-    with open("/proc/%d/status" % pid) as proc_status:
-        v = proc_status.read()
-        m = v[v.index("VmRSS:") :].split(maxsplit=3)
-        scale = {
-            "kB": 1024.0,
-            "mB": 1024.0 * 1024.0,
-            "KB": 1024.0,
-            "MB": 1024.0 * 1024.0,
-        }
-        memory += float(m[1]) * scale[m[2]]
+def get_memory_usage():
+    try:
+        p = psutil.Process(os.getpid())
+        children = p.children(recursive=True)
+        memory = 0
+        for child in children:
+            memory += child.memory_info().rss
+    except psutil.NoSuchProcess:
+        memory = 0
     return memory
 
 
@@ -33,7 +30,7 @@ def dispatch(target, args, max_memory=-1, timeout=-1):
             time.sleep(0.01)
             now_t = time.time()
             duration_t = now_t - start_t
-            mem_usage = get_memory_usage(proc.pid)
+            mem_usage = get_memory_usage()
             if max_memory >= 0 and mem_usage >= max_memory:
                 logger.error(
                     "Out of Memory (killing process): %d > %d", mem_usage, max_memory
