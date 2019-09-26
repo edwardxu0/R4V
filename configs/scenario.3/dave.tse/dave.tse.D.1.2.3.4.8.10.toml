@@ -47,3 +47,4 @@ model="networks/dave/model.onnx"
 
 [[distillation.strategies.drop_layer]]
 layer_id=[1, 2, 3, 4, 8, 10]
+
