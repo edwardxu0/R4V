@@ -194,6 +194,15 @@ def job_gres(parent, gres):
     return parent
 
 
+def job_scratch(parent):
+    scratch = ET.SubElement(parent, "jsdl:FileSystem", name="SCRATCH")
+    scratch.set("xmlns:ns10", "http://vcgr.cs.virginia.edu/genesisII/jsdl")
+    scratch.set("ns10:unique-id", "test_scratch")
+    fs_type = ET.SubElement(scratch, "jsdl:FileSystemType")
+    fs_type.text = "spool"
+    return parent
+
+
 def job_stage_data(parent, name: Path, path: Path, is_output=True):
     el = ET.SubElement(parent, "jsdl:DataStaging")
     file_name = ET.SubElement(el, "jsdl:FileName")
@@ -205,14 +214,20 @@ def job_stage_data(parent, name: Path, path: Path, is_output=True):
     path_uri = ET.SubElement(file_path, "jsdl:URI")
     path_uri.text = str(path)
     creation_flag = ET.SubElement(el, "jsdl:CreationFlag")
-    creation_flag.text = "overwrite"
     delete_on_term = ET.SubElement(el, "jsdl:DeleteOnTermination")
-    delete_on_term.text = "true"
     handle_as_archive = ET.SubElement(el, "jsdl:HandleAsArchive")
     if ".tar" in name.suffixes or ".zip" in name.suffixes:
         handle_as_archive.text = "true"
+        # delete_on_term.text = "false"
+        delete_on_term.text = "true"
+        # creation_flag.text = "dontOverwrite"
+        creation_flag.text = "overwrite"
+        # fs = ET.SubElement(el, "jsdl:FilesystemName")
+        # fs.text = "SCRATCH"
     else:
         handle_as_archive.text = "false"
+        delete_on_term.text = "true"
+        creation_flag.text = "overwrite"
     always_stage_out = ET.SubElement(el, "jsdl:AlwaysStageOut")
     always_stage_out.text = "false"
     return el
@@ -245,6 +260,7 @@ def main(args: argparse.Namespace) -> None:
     job_res = job_time(job_res, args.time)
     job_res = job_memory(job_res, args.mem)
     job_res = job_gres(job_res, args.gres)
+    job_res = job_scratch(job_res)
 
     job_data = []
     for file_name in args.input_data:
@@ -258,7 +274,7 @@ def main(args: argparse.Namespace) -> None:
     job_data.append(job_stage_data(job_desc, args.output, stdout_path))
     job_data.append(job_stage_data(job_desc, args.error, stderr_path))
 
-    # prettyprint(job_def)
+    prettyprint(job_def)
 
     job_fd, job_file_name = tempfile.mkstemp()
     with open(job_fd, "w") as job_file:

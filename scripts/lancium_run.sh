@@ -9,6 +9,7 @@ echo "[PATH]/lancium_run.sh $@"
 # export PYTHONPATH=$(pwd)/.venv/lib/python3.6/site-packages:$PYTHONPATH
 # pip install --user toml
 # pip install --user onnx
+conda init bash
 conda create -y -p $(pwd)/.venv python=3.6
 conda activate $(pwd)/.venv
 conda install -y pytorch=1.0.0 torchvision=0.2.1 cudatoolkit=10.0 -c pytorch

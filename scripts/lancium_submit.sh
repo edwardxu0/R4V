@@ -17,7 +17,7 @@ for config in $configdir/*; do
         "--error \"$uuid.err\""\
         "--output \"$uuid.out\""\
         "/usr/local/bin/singularity-wrapper pytorch"\
-        "bash ./r4v/scripts/lancium_run.sh \"$config\" \"$uuid\""
+        "bash ./scratch/r4v/scripts/lancium_run.sh \"$config\" \"$uuid\""
     ./scripts/lancium_submit.py \
         -G rns:/home/CCC/Lancium/dls2fc@virginia.edu/foo \
         -I r4v.tar.gz \
@@ -26,7 +26,7 @@ for config in $configdir/*; do
         --error "$uuid.err" \
         --output "$uuid.out" \
         /usr/local/bin/singularity-wrapper pytorch \
-        bash ./r4v/scripts/lancium_run.sh "$config" "$uuid"
+        bash ./scratch/r4v/scripts/lancium_run.sh "$config" "$uuid"
     if [ $count -eq 2 ]
     then
         break
