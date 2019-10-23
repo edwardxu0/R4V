@@ -12,23 +12,23 @@ for config in $configdir/*; do
     echo "./scripts/lancium_submit.py"\
         "-G rns:/home/CCC/Lancium/dls2fc@virginia.edu/foo"\
         "-I r4v.tar.gz"\
-        "-O r4v/tmp"\
+        "-O $uuid.model.tar.gz"\
         "--gres=gpu:1" \
         "--error \"$uuid.err\""\
         "--output \"$uuid.out\""\
-        "/usr/local/bin/singularity-wrapper pytorch"\
-        "bash ./scratch/r4v/scripts/lancium_run.sh \"$config\" \"$uuid\""
+        "--time 12:00:00"\
+        "--mem 8G"\
+        "/nfs/software/wrappers/py36-gcc-wrapper"\
+        "./r4v/scripts/lancium_run.sh \"$config\" \"$uuid\""
     ./scripts/lancium_submit.py \
         -G rns:/home/CCC/Lancium/dls2fc@virginia.edu/foo \
         -I r4v.tar.gz \
-        -O r4v/tmp \
+        -O $uuid.model.tar.gz \
         --gres=gpu:1 \
         --error "$uuid.err" \
         --output "$uuid.out" \
-        /usr/local/bin/singularity-wrapper pytorch \
-        bash ./scratch/r4v/scripts/lancium_run.sh "$config" "$uuid"
-    if [ $count -eq 2 ]
-    then
-        break
-    fi
+        --time 12:00:00 \
+        --mem 8G \
+        /nfs/software/wrappers/py36-gcc-wrapper \
+        ./r4v/scripts/lancium_run.sh "$config" "$uuid"
 done

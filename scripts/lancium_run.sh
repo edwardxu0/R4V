@@ -5,20 +5,36 @@ date
 echo $(hostname)
 echo "[PATH]/lancium_run.sh $@"
 
-# set up environment
-# export PYTHONPATH=$(pwd)/.venv/lib/python3.6/site-packages:$PYTHONPATH
-# pip install --user toml
-# pip install --user onnx
-conda init bash
-conda create -y -p $(pwd)/.venv python=3.6
-conda activate $(pwd)/.venv
-conda install -y pytorch=1.0.0 torchvision=0.2.1 cudatoolkit=10.0 -c pytorch
-conda install -y numpy=1.15.4 toml=0.10.0
-pip install --user onnx
+# set up environment (do once)
+if [ ! -e ./scratch/.venv/bin/activate ]
+then
+    cd scratch
+    echo "Setting up execution environment..."
+    echo $(python -V)
+    echo $(which python)
+    python -m venv .venv
+    . .venv/bin/activate
+    echo $(python -V)
+    echo $(which python)
 
+    while read req || [ -n "$req" ]
+    do
+        echo "pip install $req"
+        pip install $req
+    done < ../r4v/requirements.txt
+    deactivate
+    cd ..
+fi
+
+# move to app directory
+ln -s $(pwd)/scratch/r4v/artifacts r4v/artifacts
+. scratch/.venv/bin/activate
+echo $(python -V)
+echo $(which python)
 cd r4v
 
 # prepare the config file
+echo "Preparing configuration file..."
 filename=$(basename $1)
 identifier=$2
 echo "$identifier"
@@ -36,5 +52,8 @@ echo "path=\"tmp/$config_name/$identifier/model.onnx\"" >> $config
 echo
 
 # run distillation
+echo "Running distillation..."
 echo "python -m r4v distill $config -v"
 python -m r4v distill $config -v
+
+tar -czf ../$identifier.model.tar.gz tmp
