@@ -36,11 +36,15 @@ path="tmp/artifacts/mnist"
 [distillation.teacher]
 framework="onnx"
 input_shape=[1, 1, 28, 28]
-model="tests/networks/mnist/conv_bn.onnx"
+model="tests/networks/mnist/conv.onnx"
 
 [[distillation.strategies.forall]]
 layer_type="Convolutional"
 strategy="drop_layer"
 
+[[distillation.strategies.forall]]
+layer_type="MaxPool"
+strategy="drop_layer"
+
 [distillation.student]
-path="tmp/test_distill_conv_bn/conv_bn_to_fc.student.onnx"
+path="tmp/test_distill_conv/conv_to_fc.student.onnx"

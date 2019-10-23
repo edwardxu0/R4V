@@ -1,5 +1,8 @@
 """
 """
+import importlib
+
+from pathlib import Path
 from .. import logging
 from .cli import add_subparser
 from ..nn import load_network, Droppable, Linearizable, Rescalable
@@ -20,6 +23,12 @@ class Color:
 
 def show(args):
     logger = logging.getLogger(__name__)
+    for plugin_path in args.plugins:
+        plugin_name = Path(plugin_path).stem
+        spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
     network = load_network(
         {
             "model": args.model,

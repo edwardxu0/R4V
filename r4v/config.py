@@ -1,3 +1,4 @@
+import importlib
 import toml
 
 from functools import partial
@@ -22,8 +23,19 @@ def parse(config_filename, override={}):
 
 
 class Configuration:
+    PLUGINS = {}
+
     def __init__(self, config):
         self.config = config
+        if "plugins" in self.config:
+            for plugin in self.config["plugins"]:
+                if plugin["name"] not in self.__class__.PLUGINS:
+                    spec = importlib.util.spec_from_file_location(
+                        plugin["name"], plugin["path"]
+                    )
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    self.__class__.PLUGINS[plugin["name"]] = mod
 
     def __getitem__(self, name):
         return self.config[name]

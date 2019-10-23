@@ -19,7 +19,6 @@ from .pytorch import (
     PytorchReshape,
     PytorchResidualBlock,
     PytorchResidualBlockV2,
-    PytorchResidualBottleneckV2,
     PytorchSequential,
     PytorchTranspose,
 )
@@ -34,7 +33,7 @@ ONNX_TO_NUMPY_DTYPE = {
 }
 
 
-def _as_numpy(node):
+def as_numpy(node):
     if isinstance(node, onnx.TensorProto):
         return numpy_helper.to_array(node)
     elif isinstance(node, onnx.NodeProto):
@@ -53,7 +52,7 @@ def _as_numpy(node):
         raise ValueError("Unknown node type: %s" % type(node))
 
 
-def _fix_padding(pads):
+def fix_padding(pads):
     # return padding as left, right, top, bottom
     logger = logging.getLogger(__name__)
     if len(pads) == 2:
@@ -71,7 +70,7 @@ def _fix_padding(pads):
     return pads
 
 
-def _get_tf_pads(in_height, in_width, kernel_shape, strides):
+def get_tf_pads(in_height, in_width, kernel_shape, strides):
     out_height = np.ceil(float(in_height) / float(strides[0]))
     out_width = np.ceil(float(in_width) / float(strides[1]))
     pad_along_height = max(
@@ -85,23 +84,23 @@ def _get_tf_pads(in_height, in_width, kernel_shape, strides):
     return int(pad_top), int(pad_bottom), int(pad_left), int(pad_right)
 
 
-def _as_implicit_padding(pads):
+def as_implicit_padding(pads):
     if tuple(pads) == (0, 0, 0, 0):
         return "VALID"
     else:
         return "SAME"
 
 
-def _get_conv_parameters(conv_op, pad_op=None):
+def get_conv_parameters(conv_op, pad_op=None):
     logger = logging.getLogger(__name__)
 
-    conv_weight = _as_numpy(conv_op[2])
+    conv_weight = as_numpy(conv_op[2])
     if len(conv_op) > 3:
-        conv_bias = _as_numpy(conv_op[3])
+        conv_bias = as_numpy(conv_op[3])
     else:
         conv_bias = np.zeros((conv_weight.shape[0],), dtype=np.float32)
 
-    conv_attributes = {a.name: _as_numpy(a) for a in conv_op[0].attribute}
+    conv_attributes = {a.name: as_numpy(a) for a in conv_op[0].attribute}
     if "auto_pad" in conv_attributes:
         logger.warning("auto_pad is deprecated: (%s)", conv_attributes["auto_pad"])
     if "dilations" in conv_attributes:
@@ -114,26 +113,26 @@ def _get_conv_parameters(conv_op, pad_op=None):
     kernel_shape = tuple(conv_attributes.get("kernel_shape", conv_weight.shape[2:]))
     assert kernel_shape == tuple(conv_weight.shape[2:])
     strides = tuple(conv_attributes.get("strides", (1, 1)))
-    pads = _fix_padding(tuple(conv_attributes.get("pads", (0, 0, 0, 0))))
+    pads = fix_padding(tuple(conv_attributes.get("pads", (0, 0, 0, 0))))
     if pad_op is None:
         return conv_weight, conv_bias, kernel_shape, strides, pads
     assert pads == (0, 0, 0, 0)
-    padding_attributes = {a.name: _as_numpy(a) for a in pad_op[0].attribute}
-    pads = _fix_padding(tuple(padding_attributes["pads"]))
+    padding_attributes = {a.name: as_numpy(a) for a in pad_op[0].attribute}
+    pads = fix_padding(tuple(padding_attributes["pads"]))
     assert padding_attributes.get("mode", "constant") == "constant"
     assert padding_attributes.get("value", 0.0) == 0.0
 
     return conv_weight, conv_bias, kernel_shape, strides, pads
 
 
-def _get_batchnorm_parameters(bn_op):
-    attributes = {a.name: _as_numpy(a) for a in bn_op[0].attribute}
+def get_batchnorm_parameters(bn_op):
+    attributes = {a.name: as_numpy(a) for a in bn_op[0].attribute}
     assert "epsilon" in attributes
     assert "momentum" in attributes
-    scale = _as_numpy(bn_op[2])
-    bias = _as_numpy(bn_op[3])
-    mean = _as_numpy(bn_op[4])
-    var = _as_numpy(bn_op[5])
+    scale = as_numpy(bn_op[2])
+    bias = as_numpy(bn_op[3])
+    mean = as_numpy(bn_op[4])
+    var = as_numpy(bn_op[5])
     return attributes, scale, bias, mean, var
 
 
@@ -331,6 +330,8 @@ class FullyConnected(Rescalable, Droppable):
         return self
 
     def as_pytorch(self, maintain_weights=False):
+        if maintain_weights and self.modified:
+            raise ValueError("Cannot maintain weights of modified layer.")
         if not self.dropped:
             linear_layer = nn.Linear(self.in_features, self.out_features)
             if maintain_weights and not self.modified:
@@ -359,16 +360,16 @@ class MatmulFullyConnected(FullyConnected):
 
     def __init__(self, node_list):
         if isinstance(node_list[0][1], onnx.TensorProto):
-            self.weight = _as_numpy(node_list[0][1])
+            self.weight = as_numpy(node_list[0][1])
         elif isinstance(node_list[0][2], onnx.TensorProto):
-            self.weight = _as_numpy(node_list[0][2]).T
+            self.weight = as_numpy(node_list[0][2]).T
         else:
             raise ValueError(
                 "A constant weight value was expected for the fully connected layer."
             )
         if len(node_list) > 1:
             assert node_list[1][0].op_type.lower() == "add"
-            self.bias = _as_numpy(node_list[1][2])
+            self.bias = as_numpy(node_list[1][2])
         else:
             self.bias = np.zeros((self.weight.shape[1],))
 
@@ -380,18 +381,18 @@ class GemmFullyConnected(FullyConnected):
 
     def __init__(self, node_list):
         if isinstance(node_list[0][1], onnx.TensorProto):
-            self.weight = _as_numpy(node_list[0][1])
+            self.weight = as_numpy(node_list[0][1])
         elif isinstance(node_list[0][2], onnx.TensorProto):
-            self.weight = _as_numpy(node_list[0][2])
+            self.weight = as_numpy(node_list[0][2])
         else:
             raise ValueError(
                 "A constant weight value was expected for the fully connected layer."
             )
-        self.bias = _as_numpy(node_list[0][3])
+        self.bias = as_numpy(node_list[0][3])
 
         self.gemm_attributes = {"alpha": 1.0, "beta": 1.0, "transA": 0, "transB": 0}
         self.gemm_attributes.update(
-            {a.name: _as_numpy(a) for a in node_list[0][0].attribute}
+            {a.name: as_numpy(a) for a in node_list[0][0].attribute}
         )
         assert self.gemm_attributes["alpha"] == 1.0
         assert self.gemm_attributes["beta"] == 1.0
@@ -433,10 +434,10 @@ class Convolutional(Rescalable, Droppable):
             assert len(pad_op) == 2
             conv_op = node_list[1]
 
-        self.weight, self.bias, self.kernel_shape, self.strides, self.pads = _get_conv_parameters(
+        self.weight, self.bias, self.kernel_shape, self.strides, self.pads = get_conv_parameters(
             conv_op, pad_op=pad_op
         )
-        self.padding = _as_implicit_padding(self.pads)
+        self.padding = as_implicit_padding(self.pads)
         self.in_features = self.weight.shape[1]
         self.out_features = self.bias.shape[0]
 
@@ -475,8 +476,18 @@ class Convolutional(Rescalable, Droppable):
             output.input_shape = self.output_shape
         return self
 
+    def replace_padding(self, padding):
+        self.modified = True
+        self.padding = padding
+        self.update_output_shape()
+        for output in self._outputs:
+            output.input_shape = self.output_shape
+        return self
+
     def as_pytorch(self, maintain_weights=False):
         logger = logging.getLogger(__name__)
+        if maintain_weights and self.modified:
+            raise ValueError("Cannot maintain weights of modified layer.")
         if not self.dropped:
             padding = 0
             conv_padding_layer = nn.Sequential()
@@ -490,20 +501,13 @@ class Convolutional(Rescalable, Droppable):
             elif self.padding == "VALID":
                 padding = (0, 0)
             elif self.padding == "SAME":
-                tf_pads = _get_tf_pads(
+                tf_pads = get_tf_pads(
                     self.input_shape[2],
                     self.input_shape[3],
                     self.kernel_shape,
                     self.strides,
                 )
-                pads = self.pads
-                if self.pads != tf_pads:
-                    logger.warning(
-                        "Converting padding to tensorflow padding: %s -> %s",
-                        self.pads,
-                        tf_pads,
-                    )
-                    pads = tf_pads
+                pads = tf_pads
                 if pads[0] == pads[1] and pads[2] == pads[3]:
                     padding = (pads[0], pads[2])
                 else:
@@ -529,120 +533,6 @@ class Convolutional(Rescalable, Droppable):
         return PytorchSequential(self)
 
 
-class ConvolutionalMaxPool(Convolutional):
-    PATTERNS = [
-        ["conv", "relu", "maxpool"],
-        ["conv", "maxpool", "relu"],
-        ["conv", "maxpool"],
-        ["pad", "conv", "relu", "maxpool"],
-        ["pad", "conv", "maxpool", "relu"],
-        ["pad", "conv", "maxpool"],
-    ]
-
-    def __init__(self, node_list):
-        logger = logging.getLogger(__name__)
-        super().__init__(
-            [
-                node
-                for node in node_list
-                if node[0].op_type.lower() in ["pad", "conv", "relu"]
-            ]
-        )
-        maxpool_nodes = [
-            node for node in node_list if node[0].op_type.lower() in ["maxpool"]
-        ]
-        assert len(maxpool_nodes) == 1
-        maxpool_node = maxpool_nodes[0][0]
-        self.maxpool_attributes = {a.name: _as_numpy(a) for a in maxpool_node.attribute}
-        if "auto_pad" in self.maxpool_attributes:
-            logger.warning(
-                "auto_pad is deprecated: (%s)", self.maxpool_attributes["auto_pad"]
-            )
-            assert self.maxpool_attributes["auto_pad"] == "VALID"
-        self.maxpool_kernel_shape = tuple(self.maxpool_attributes["kernel_shape"])
-        self.maxpool_strides = tuple(self.maxpool_attributes["strides"])
-        self.maxpool_pads = _fix_padding(
-            tuple(self.maxpool_attributes.get("pads", (0, 0, 0, 0)))
-        )
-        self.maxpool_padding = _as_implicit_padding(self.maxpool_pads)
-        self.output_names = list(node_list[-1][0].output)
-
-    def __repr__(self):
-        return (
-            f"ConvolutionalMaxPool({self.in_features}, "
-            f"{self.out_features}, "
-            f"kernel_shape={self.kernel_shape}, "
-            f"strides={self.strides}, "
-            f"pads={self.padding}, "
-            f"activation={self.activation}, "
-            f"maxpool_kernel_shape={self.maxpool_kernel_shape}, "
-            f"maxpool_stride={self.maxpool_strides}, "
-            f"maxpool_pads={self.maxpool_pads})"
-        )
-
-    def as_pytorch(self, maintain_weights=False):
-        logger = logging.getLogger(__name__)
-        if not self.dropped:
-            padding = 0
-            conv_padding_layer = nn.Sequential()
-            if maintain_weights and not self.modified:
-                if self.pads == (0, 0, 0, 0):
-                    padding = (0, 0)
-                elif self.pads[0] == self.pads[1] and self.pads[2] == self.pads[3]:
-                    padding = (self.pads[0], self.pads[2])
-                else:
-                    conv_padding_layer = nn.ZeroPad2d(self.pads)
-            elif self.padding == "VALID":
-                padding = (0, 0)
-            elif self.padding == "SAME":
-                tf_pads = _get_tf_pads(
-                    self.input_shape[2],
-                    self.input_shape[3],
-                    self.kernel_shape,
-                    self.strides,
-                )
-                pads = self.pads
-                if self.pads != tf_pads:
-                    logger.warning(
-                        "Converting padding to tensorflow padding: %s -> %s",
-                        self.pads,
-                        tf_pads,
-                    )
-                    pads = tf_pads
-                if pads[0] == pads[1] and pads[2] == pads[3]:
-                    padding = (pads[0], pads[2])
-                else:
-                    conv_padding_layer = nn.ZeroPad2d(pads)
-            conv_layer = nn.Conv2d(
-                self.in_features,
-                self.out_features,
-                self.kernel_shape,
-                stride=tuple(self.strides),
-                padding=padding,
-            )
-            if maintain_weights and not self.modified:
-                conv_layer.weight.data = torch.from_numpy(self.weight)
-                conv_layer.bias.data = torch.from_numpy(self.bias)
-            elif maintain_weights:
-                raise ValueError("Cannot maintain weights of modified layer.")
-            assert self.maxpool_pads[0] == self.maxpool_pads[2]
-            assert self.maxpool_pads[1] == self.maxpool_pads[3]
-            max_pool_layer = nn.MaxPool2d(
-                self.maxpool_kernel_shape,
-                stride=self.maxpool_strides,
-                padding=(self.maxpool_pads[0], self.maxpool_pads[1]),
-            )
-            if self.activation == "relu":
-                return PytorchSequential(
-                    self, conv_padding_layer, conv_layer, nn.ReLU(), max_pool_layer
-                )
-            else:
-                return PytorchSequential(
-                    self, conv_padding_layer, conv_layer, max_pool_layer
-                )
-        return PytorchSequential(self)
-
-
 class MaxPool(Droppable):
     PATTERNS = [["maxpool"]]
 
@@ -650,7 +540,7 @@ class MaxPool(Droppable):
         logger = logging.getLogger(__name__)
         super().__init__(node_list)
         maxpool_node = node_list[0][0]
-        self.maxpool_attributes = {a.name: _as_numpy(a) for a in maxpool_node.attribute}
+        self.maxpool_attributes = {a.name: as_numpy(a) for a in maxpool_node.attribute}
         if "auto_pad" in self.maxpool_attributes:
             logger.warning(
                 "auto_pad is deprecated: (%s)", self.maxpool_attributes["auto_pad"]
@@ -658,7 +548,7 @@ class MaxPool(Droppable):
             assert self.maxpool_attributes["auto_pad"] == "VALID"
         self.maxpool_kernel_shape = tuple(self.maxpool_attributes["kernel_shape"])
         self.maxpool_strides = tuple(self.maxpool_attributes["strides"])
-        self.maxpool_pads = _fix_padding(
+        self.maxpool_pads = fix_padding(
             tuple(self.maxpool_attributes.get("pads", (0, 0, 0, 0)))
         )
         self.output_names = list(node_list[-1][0].output)
@@ -694,7 +584,7 @@ class BatchNorm(Droppable):
         super().__init__(node_list)
         assert len(node_list) == 1
         batchnorm_op = node_list[0]
-        self.attributes, self.weight, self.bias, self.mean, self.var = _get_batchnorm_parameters(
+        self.attributes, self.weight, self.bias, self.mean, self.var = get_batchnorm_parameters(
             batchnorm_op
         )
 
@@ -702,6 +592,11 @@ class BatchNorm(Droppable):
 
     def __repr__(self):
         return f"BatchNorm()"
+
+    @Layer.input_shape.setter
+    def input_shape(self, value):
+        self.in_features = self.out_features = value[1]
+        Layer.input_shape.fset(self, value)
 
     def as_pytorch(self, maintain_weights=False):
         if not self.dropped:
@@ -722,266 +617,6 @@ class BatchNorm(Droppable):
             elif maintain_weights:
                 raise ValueError("Cannot maintain weights of modified layer.")
             return PytorchSequential(self, bn_layer)
-
-
-class ConvBatchNorm(Convolutional):
-    PATTERNS = [
-        ["conv", "batchnormalization", "relu"],
-        ["conv", "batchnormalization"],
-        ["pad", "conv", "batchnormalization", "relu"],
-        ["pad", "conv", "batchnormalization"],
-    ]
-
-    def __init__(self, node_list):
-        Layer.__init__(self, node_list)
-
-        pad_op = None
-        if node_list[0][0].op_type.lower() == "pad":
-            pad_op = node_list[0]
-            node_list = node_list[1:]
-        conv_op = node_list[0]
-        batchnorm_op = node_list[1]
-
-        self.conv_weight, self.conv_bias, self.kernel_shape, self.strides, self.pads = _get_conv_parameters(
-            conv_op, pad_op=pad_op
-        )
-        self.padding = _as_implicit_padding(self.pads)
-        self.in_features = self.conv_weight.shape[1]
-        self.out_features = self.conv_bias.shape[0]
-
-        self.bn_attributes, self.bn_weight, self.bn_bias, self.bn_mean, self.bn_var = _get_batchnorm_parameters(
-            batchnorm_op
-        )
-
-        self.activation = None
-        if len(node_list) > 2:
-            assert (
-                len(node_list[2][1:]) == 1
-            ), "activation should not have more than one input"
-            self.activation = node_list[2][0].op_type.lower()
-            assert self.activation == "relu", (
-                "expected relu activation, but got %s" % node_list[2][0].op_type
-            )
-
-    def __repr__(self):
-        return (
-            f"ConvBatchNorm({self.in_features}, "
-            f"{self.out_features}, "
-            f"kernel_shape={self.kernel_shape}, "
-            f"strides={self.strides}, "
-            f"pads={self.padding}, "
-            f"activation={self.activation})"
-        )
-
-    def as_pytorch(self, maintain_weights=False):
-        logger = logging.getLogger(__name__)
-        if not self.dropped:
-            padding = 0
-            conv_padding_layer = nn.Sequential()
-            if maintain_weights and not self.modified:
-                if self.pads == (0, 0, 0, 0):
-                    padding = (0, 0)
-                elif self.pads[0] == self.pads[1] and self.pads[2] == self.pads[3]:
-                    padding = (self.pads[0], self.pads[2])
-                else:
-                    conv_padding_layer = nn.ZeroPad2d(self.pads)
-            elif self.padding == "VALID":
-                padding = (0, 0)
-            elif self.padding == "SAME":
-                tf_pads = _get_tf_pads(
-                    self.input_shape[2],
-                    self.input_shape[3],
-                    self.kernel_shape,
-                    self.strides,
-                )
-                pads = self.pads
-                if self.pads != tf_pads:
-                    logger.warning(
-                        "Converting padding to tensorflow padding: %s -> %s",
-                        self.pads,
-                        tf_pads,
-                    )
-                    pads = tf_pads
-                if pads[0] == pads[1] and pads[2] == pads[3]:
-                    padding = (pads[0], pads[2])
-                else:
-                    conv_padding_layer = nn.ZeroPad2d(pads)
-            conv_layer = nn.Conv2d(
-                self.in_features,
-                self.out_features,
-                self.kernel_shape,
-                stride=tuple(self.strides),
-                padding=padding,
-            )
-            if maintain_weights and not self.modified:
-                assert conv_layer.weight.shape == self.conv_weight.shape
-                assert conv_layer.bias.shape == self.conv_bias.shape
-                conv_layer.weight.data = torch.from_numpy(self.conv_weight)
-                conv_layer.bias.data = torch.from_numpy(self.conv_bias)
-            elif maintain_weights:
-                raise ValueError("Cannot maintain weights of modified layer.")
-            bn_layer = torch.nn.BatchNorm2d(
-                self.out_features,
-                eps=self.bn_attributes["epsilon"],
-                momentum=self.bn_attributes["momentum"],
-            )
-            if maintain_weights and not self.modified:
-                bn_layer = PytorchBatchNorm(
-                    self.bn_mean,
-                    self.bn_var,
-                    self.bn_weight,
-                    self.bn_bias,
-                    self.bn_attributes["momentum"],
-                    self.bn_attributes["epsilon"],
-                )
-            elif maintain_weights:
-                raise ValueError("Cannot maintain weights of modified layer.")
-            if self.activation == "relu":
-                return PytorchSequential(
-                    self, conv_padding_layer, conv_layer, bn_layer, nn.ReLU()
-                )
-            return PytorchSequential(self, conv_padding_layer, conv_layer, bn_layer)
-
-
-class ConvBatchNormMaxPool(ConvolutionalMaxPool):
-    PATTERNS = [
-        ["conv", "batchnormalization", "relu", "maxpool"],
-        ["pad", "conv", "batchnormalization", "relu", "maxpool"],
-    ]
-
-    def __init__(self, node_list):
-        logger = logging.getLogger(__name__)
-        Layer.__init__(self, node_list)
-
-        pad_op = None
-        if node_list[0][0].op_type.lower() == "pad":
-            pad_op = node_list[0]
-            node_list = node_list[1:]
-        conv_op = node_list[0]
-        batchnorm_op = node_list[1]
-        relu_op = node_list[2]
-        maxpool_op = node_list[3]
-
-        self.conv_weight, self.conv_bias, self.kernel_shape, self.strides, self.pads = _get_conv_parameters(
-            conv_op, pad_op=pad_op
-        )
-        self.padding = _as_implicit_padding(self.pads)
-        self.in_features = self.conv_weight.shape[1]
-        self.out_features = self.conv_bias.shape[0]
-
-        self.bn_attributes, self.bn_weight, self.bn_bias, self.bn_mean, self.bn_var = _get_batchnorm_parameters(
-            batchnorm_op
-        )
-
-        self.activation = relu_op[0].op_type.lower()
-        assert self.activation == "relu"
-
-        self.maxpool_attributes = {
-            a.name: _as_numpy(a) for a in maxpool_op[0].attribute
-        }
-        if "auto_pad" in self.maxpool_attributes:
-            logger.warning(
-                "auto_pad is deprecated: (%s)", self.maxpool_attributes["auto_pad"]
-            )
-            assert self.maxpool_attributes["auto_pad"] == "VALID"
-        self.maxpool_kernel_shape = tuple(self.maxpool_attributes["kernel_shape"])
-        self.maxpool_strides = tuple(self.maxpool_attributes["strides"])
-        self.maxpool_pads = _fix_padding(
-            tuple(self.maxpool_attributes.get("pads", (0, 0, 0, 0)))
-        )
-
-    def __repr__(self):
-        return (
-            f"ConvBatchNormMaxPool({self.in_features}, "
-            f"{self.out_features}, "
-            f"kernel_shape={self.kernel_shape}, "
-            f"strides={self.strides}, "
-            f"pads={self.padding}, "
-            f"activation={self.activation}, "
-            f"maxpool_kernel_shape={self.maxpool_kernel_shape}, "
-            f"maxpool_stride={self.maxpool_strides}, "
-            f"maxpool_pads={self.maxpool_pads})"
-        )
-
-    def as_pytorch(self, maintain_weights=False):
-        logger = logging.getLogger(__name__)
-        if not self.dropped:
-            padding = 0
-            conv_padding_layer = nn.Sequential()
-            if maintain_weights and not self.modified:
-                if self.pads == (0, 0, 0, 0):
-                    padding = (0, 0)
-                elif self.pads[0] == self.pads[1] and self.pads[2] == self.pads[3]:
-                    padding = (self.pads[0], self.pads[2])
-                else:
-                    conv_padding_layer = nn.ZeroPad2d(self.pads)
-            elif self.padding == "VALID":
-                padding = (0, 0)
-            elif self.padding == "SAME":
-                tf_pads = _get_tf_pads(
-                    self.input_shape[2],
-                    self.input_shape[3],
-                    self.kernel_shape,
-                    self.strides,
-                )
-                pads = self.pads
-                if self.pads != tf_pads:
-                    logger.warning(
-                        "Converting padding to tensorflow padding: %s -> %s",
-                        self.pads,
-                        tf_pads,
-                    )
-                    pads = tf_pads
-                if pads[0] == pads[1] and pads[2] == pads[3]:
-                    padding = (pads[0], pads[2])
-                else:
-                    conv_padding_layer = nn.ZeroPad2d(pads)
-            conv_layer = nn.Conv2d(
-                self.in_features,
-                self.out_features,
-                self.kernel_shape,
-                stride=tuple(self.strides),
-                padding=padding,
-            )
-            if maintain_weights and not self.modified:
-                assert conv_layer.weight.shape == self.conv_weight.shape
-                assert conv_layer.bias.shape == self.conv_bias.shape
-                conv_layer.weight.data = torch.from_numpy(self.conv_weight)
-                conv_layer.bias.data = torch.from_numpy(self.conv_bias)
-            elif maintain_weights:
-                raise ValueError("Cannot maintain weights of modified layer.")
-            bn_layer = torch.nn.BatchNorm2d(
-                self.out_features,
-                eps=self.bn_attributes["epsilon"],
-                momentum=self.bn_attributes["momentum"],
-            )
-            if maintain_weights and not self.modified:
-                bn_layer = PytorchBatchNorm(
-                    self.bn_mean,
-                    self.bn_var,
-                    self.bn_weight,
-                    self.bn_bias,
-                    self.bn_attributes["momentum"],
-                    self.bn_attributes["epsilon"],
-                )
-            elif maintain_weights:
-                raise ValueError("Cannot maintain weights of modified layer.")
-            assert self.maxpool_pads[0] == self.maxpool_pads[2]
-            assert self.maxpool_pads[1] == self.maxpool_pads[3]
-            max_pool_layer = nn.MaxPool2d(
-                self.maxpool_kernel_shape,
-                stride=self.maxpool_strides,
-                padding=(self.maxpool_pads[0], self.maxpool_pads[1]),
-            )
-            assert self.activation == "relu"
-            return PytorchSequential(
-                self,
-                conv_padding_layer,
-                conv_layer,
-                bn_layer,
-                nn.ReLU(),
-                max_pool_layer,
-            )
 
 
 class Relu(Droppable):
@@ -1109,16 +744,16 @@ class ResidualBlock(ResidualConnection, Droppable, DroppableOperations):
         self.bn_mean = [None, None]
         self.bn_var = [None, None]
         for i in range(2):
-            conv_params = _get_conv_parameters(conv_op[i], pad_op=pad_op[i])
+            conv_params = get_conv_parameters(conv_op[i], pad_op=pad_op[i])
             self.conv_weight[i], self.conv_bias[i], self.conv_kernel_shape[
                 i
             ], self.conv_strides[i], self.conv_pads[i] = conv_params
-            self.conv_padding[i] = _as_implicit_padding(self.conv_pads[i])
+            self.conv_padding[i] = as_implicit_padding(self.conv_pads[i])
             self.in_features[i] = self.conv_weight[i].shape[1]
             self.out_features[i] = self.conv_bias[i].shape[0]
             self.bn_attributes[i], self.bn_weight[i], self.bn_bias[i], self.bn_mean[
                 i
-            ], self.bn_var[i] = _get_batchnorm_parameters(batchnorm_op[i])
+            ], self.bn_var[i] = get_batchnorm_parameters(batchnorm_op[i])
         if activation_op[0].op_type.lower() == "relu":
             self.activation = "relu"
         assert self.activation == "relu"
@@ -1126,7 +761,7 @@ class ResidualBlock(ResidualConnection, Droppable, DroppableOperations):
         self.downsample = False
         if downsample is not None:
             self.downsample = True
-            w, b, k, s, p = _get_conv_parameters(downsample[0], pad_op=pad_op[-1])
+            w, b, k, s, p = get_conv_parameters(downsample[0], pad_op=pad_op[-1])
             self.ds_conv_weight = w
             self.ds_conv_bias = b
             self.ds_conv_kernel_shape = k
@@ -1138,7 +773,7 @@ class ResidualBlock(ResidualConnection, Droppable, DroppableOperations):
                 and tuple(self.ds_conv_pads) == (0, 0, 0, 0)
             ):
                 self.downsample = "ResizingBottleneck"
-            attrs, bn_w, bn_b, bn_m, bn_v = _get_batchnorm_parameters(downsample[1])
+            attrs, bn_w, bn_b, bn_m, bn_v = get_batchnorm_parameters(downsample[1])
             self.ds_bn_attributes = attrs
             self.ds_bn_weight = bn_w
             self.ds_bn_bias = bn_b
@@ -1189,6 +824,7 @@ class ResidualBlock(ResidualConnection, Droppable, DroppableOperations):
                 % (op_type, self.__class__.__name__)
             )
         self.dropped_operations.add(op_type)
+        self.modified = True
 
     def linearize(self):
         self.modified = True
@@ -1198,6 +834,8 @@ class ResidualBlock(ResidualConnection, Droppable, DroppableOperations):
         return self
 
     def as_pytorch(self, maintain_weights=False):
+        if maintain_weights and self.modified:
+            raise ValueError("Cannot maintain weights of modified layer.")
         if not self.dropped:
             return PytorchResidualBlock(self, maintain_weights=maintain_weights)
 
@@ -1236,400 +874,6 @@ class _ResidualBlock(ResidualBlock):
             super().__init__(node_list[3:10] + node_list[:3] + node_list[10:])
 
 
-class DronetResidualBlock(ResidualConnection, Droppable, DroppableOperations):
-    PATTERNS = [
-        [
-            "batchnormalization",
-            "relu",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "conv",
-            "conv",
-            "add",
-        ],
-        [
-            "conv",
-            "batchnormalization",
-            "relu",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "conv",
-            "add",
-        ],
-        [
-            "batchnormalization",
-            "relu",
-            "pad",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "pad",
-            "conv",
-            "pad",
-            "conv",
-            "add",
-        ],
-        [
-            "pad",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "pad",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "pad",
-            "conv",
-            "add",
-        ],
-    ]
-
-    def __init__(self, node_list):
-        super().__init__(node_list)
-
-        self.use_residual = True
-
-        pad_op = [None, None, None]
-        if any(node[0].op_type.lower() == "pad" for node in node_list):
-            if node_list[0][0].op_type.lower() == "pad":
-                pad_op = [node_list[4], node_list[8], node_list[0]]
-                node_list = node_list[1:4] + node_list[5:8] + node_list[9:]
-            elif node_list[0][0].op_type.lower() == "batchnormalization":
-                pad_op = [node_list[2], node_list[6], node_list[8]]
-                node_list = (
-                    node_list[:2] + node_list[3:6] + node_list[7:8] + node_list[9:]
-                )
-
-        if node_list[0][0].op_type.lower() == "conv":
-            conv_op = [node_list[3], node_list[6]]
-            batchnorm_op = [node_list[1], node_list[4]]
-            activation_op = [node_list[2], node_list[5]]
-            downsample = [node_list[0]]
-            add_op = node_list[7]
-        else:
-            conv_op = [node_list[2], node_list[6]]
-            batchnorm_op = [node_list[0], node_list[3]]
-            activation_op = [node_list[1], node_list[4]]
-            downsample = [node_list[5]]
-            add_op = node_list[7]
-
-        if pad_op[-1] is not None:
-            downsample = [pad_op[-1]] + downsample
-
-        assert batchnorm_op[0][0].output[0] == activation_op[0][0].input[0]
-        assert activation_op[0][0].output[0] == conv_op[0][0].input[0]
-        assert conv_op[0][0].output[0] == batchnorm_op[1][0].input[0]
-        assert batchnorm_op[1][0].output[0] == activation_op[1][0].input[0]
-        assert activation_op[1][0].output[0] == conv_op[1][0].input[0]
-        assert conv_op[1][0].output[0] in add_op[0].input
-        assert downsample[0][0].output[0] in add_op[0].input
-
-        self.in_features = [None, None]
-        self.out_features = [None, None]
-        self.conv_weight = [None, None]
-        self.conv_bias = [None, None]
-        self.conv_kernel_shape = [(), ()]
-        self.conv_strides = [(), ()]
-        self.conv_pads = [(), ()]
-        self.conv_padding = ["VALID", "VALID"]
-        self.bn_attributes = [{}, {}]
-        self.bn_weight = [None, None]
-        self.bn_bias = [None, None]
-        self.bn_mean = [None, None]
-        self.bn_var = [None, None]
-        for i in range(2):
-            conv_params = _get_conv_parameters(conv_op[i], pad_op=pad_op[i])
-            self.conv_weight[i], self.conv_bias[i], self.conv_kernel_shape[
-                i
-            ], self.conv_strides[i], self.conv_pads[i] = conv_params
-            self.conv_padding[i] = _as_implicit_padding(self.conv_pads[i])
-            self.in_features[i] = self.conv_weight[i].shape[1]
-            self.out_features[i] = self.conv_bias[i].shape[0]
-            self.bn_attributes[i], self.bn_weight[i], self.bn_bias[i], self.bn_mean[
-                i
-            ], self.bn_var[i] = _get_batchnorm_parameters(batchnorm_op[i])
-        if activation_op[0][0].op_type.lower() == "relu":
-            self.activation_1 = "relu"
-        if activation_op[1][0].op_type.lower() == "relu":
-            self.activation_2 = "relu"
-        assert self.activation_1 == "relu"
-        assert self.activation_2 == "relu"
-
-        self.downsample = False
-        if downsample is not None:
-            self.downsample = Convolutional(downsample)
-
-        self.dropped_operations = set()
-
-    def __repr__(self):
-        residual = (
-            "None"
-            if not self.use_residual
-            else "Identity"
-            if not self.downsample
-            else self.downsample
-        )
-        return (
-            f"ResidualBlock(\n"
-            f"  {self.in_features[0]},"
-            f"{self.in_features[1]},"
-            f"{self.out_features[1]},\n"
-            f"  kernel_shape={self.conv_kernel_shape},\n"
-            f"  strides={self.conv_strides},\n"
-            f"  pads={self.conv_padding},\n"
-            f"  residual={residual},\n"
-            f"  dropped_ops={self.dropped_operations},\n"
-            f")"
-        )
-
-    @Layer.inputs.setter
-    def inputs(self, value):
-        if not isinstance(value, list):
-            value = [value]
-        if self.downsample and self.use_residual:
-            self.downsample._inputs = value
-            assert len(self.downsample._inputs) <= 1
-            if len(self.downsample._inputs) == 0:
-                assert self.downsample.dropped
-                return
-            self.downsample.input_shape = self.downsample._inputs[0].output_shape
-        Layer.inputs.fset(self, value)
-
-    @Layer.input_shape.setter
-    def input_shape(self, value):
-        self.in_features[0] = value[1]
-        Layer.input_shape.fset(self, value)
-        if (
-            self.use_residual
-            and not self.downsample
-            and self.out_features[-1] != self.in_features[0]
-        ):
-            raise ValueError("Residual downsample needed to resize output!")
-
-    def drop(self):
-        if self.downsample:
-            self.downsample.dropped = True
-            self.downsample.modified = True
-        super().drop()
-
-    def drop_operation(self, op_type):
-        if op_type.lower() not in set(["batchnormalization"]):
-            raise ValueError(
-                "Cannot drop %s operations from layer type %s."
-                % (op_type, self.__class__.__name__)
-            )
-        self.dropped_operations.add(op_type)
-
-    def linearize(self):
-        self.modified = True
-        self.use_residual = False
-        if self.downsample:
-            self.downsample = False
-        return self
-
-    def as_pytorch(self, maintain_weights=False):
-        if not self.dropped:
-            return PytorchResidualBlockV2(self, maintain_weights=maintain_weights)
-
-
-class DronetResidualBlock_(DronetResidualBlock):
-    PATTERNS = [
-        [
-            "conv",
-            "batchnormalization",
-            "relu",
-            "pad",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "conv",
-            "add",
-        ]
-    ]
-
-    def __init__(self, node_list):
-        Layer.__init__(self, node_list)
-
-        self.use_residual = True
-
-        pad_op = [node_list[3], None]
-
-        conv_op = [node_list[4], node_list[7]]
-        batchnorm_op = [node_list[1], node_list[5]]
-        activation_op = [node_list[2], node_list[6]]
-        downsample = [node_list[0]]
-        add_op = node_list[8]
-
-        assert batchnorm_op[0][0].output[0] == activation_op[0][0].input[0]
-        assert activation_op[0][0].output[0] == pad_op[0][0].input[0]
-        assert pad_op[0][0].output[0] == conv_op[0][0].input[0]
-        assert conv_op[0][0].output[0] == batchnorm_op[1][0].input[0]
-        assert batchnorm_op[1][0].output[0] == activation_op[1][0].input[0]
-        assert activation_op[1][0].output[0] == conv_op[1][0].input[0]
-        assert conv_op[1][0].output[0] in add_op[0].input
-        assert downsample[0][0].output[0] in add_op[0].input
-
-        self.in_features = [None, None]
-        self.out_features = [None, None]
-        self.conv_weight = [None, None]
-        self.conv_bias = [None, None]
-        self.conv_kernel_shape = [(), ()]
-        self.conv_strides = [(), ()]
-        self.conv_pads = [(), ()]
-        self.conv_padding = ["VALID", "VALID"]
-        self.bn_attributes = [{}, {}]
-        self.bn_weight = [None, None]
-        self.bn_bias = [None, None]
-        self.bn_mean = [None, None]
-        self.bn_var = [None, None]
-        for i in range(2):
-            conv_params = _get_conv_parameters(conv_op[i], pad_op=pad_op[i])
-            self.conv_weight[i], self.conv_bias[i], self.conv_kernel_shape[
-                i
-            ], self.conv_strides[i], self.conv_pads[i] = conv_params
-            self.conv_padding[i] = _as_implicit_padding(self.conv_pads[i])
-            self.in_features[i] = self.conv_weight[i].shape[1]
-            self.out_features[i] = self.conv_bias[i].shape[0]
-            self.bn_attributes[i], self.bn_weight[i], self.bn_bias[i], self.bn_mean[
-                i
-            ], self.bn_var[i] = _get_batchnorm_parameters(batchnorm_op[i])
-        if activation_op[0][0].op_type.lower() == "relu":
-            self.activation_1 = "relu"
-        if activation_op[1][0].op_type.lower() == "relu":
-            self.activation_2 = "relu"
-        assert self.activation_1 == "relu"
-        assert self.activation_2 == "relu"
-
-        self.downsample = False
-        if downsample is not None:
-            self.downsample = Convolutional(downsample)
-
-        self.dropped_operations = set()
-
-
-class ResidualBottleneckV2(ResidualConnection, Droppable):
-    PATTERNS = [
-        [
-            "batchnormalization",
-            "relu",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "conv",
-            "add",
-        ],
-        [
-            "batchnormalization",
-            "relu",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "conv",
-            "batchnormalization",
-            "relu",
-            "conv",
-            "conv",
-            "add",
-        ],
-    ]
-
-    def __init__(self, node_list):
-        super().__init__(node_list)
-        logger = logging.getLogger(__name__)
-        self.use_residual = True
-
-        conv_op = [node_list[2], node_list[5], node_list[8]]
-        batchnorm_op = [node_list[0], node_list[3], node_list[6]]
-        relu_op = [node_list[1], node_list[4], node_list[7]]
-        add_op = node_list[9]
-        if node_list[9][0].op_type.lower() == "conv":
-            conv_op += [node_list[9]]
-            add_op = node_list[10]
-
-        self.in_features = [None, None, None]
-        self.out_features = [None, None, None]
-        self.conv_weight = [None, None, None]
-        self.conv_bias = [None, None, None]
-        self.conv_kernel_shape = [None, None, None]
-        self.conv_strides = [None, None, None]
-        self.conv_pads = [None, None, None]
-        self.bn_attributes = [{}, {}, {}]
-        self.bn_weight = [None, None, None]
-        self.bn_bias = [None, None, None]
-        self.bn_mean = [None, None, None]
-        self.bn_var = [None, None, None]
-        self.activation = [None, None, None]
-        for i in range(3):
-            self.conv_weight[i], self.conv_bias[i], self.conv_kernel_shape[
-                i
-            ], self.conv_strides[i], self.conv_pads[i] = _get_conv_parameters(
-                conv_op[i]
-            )
-            self.in_features[i] = self.conv_weight[i].shape[1]
-            self.out_features[i] = self.conv_bias[i].shape[0]
-            self.bn_attributes[i], self.bn_weight[i], self.bn_bias[i], self.bn_mean[
-                i
-            ], self.bn_var[i] = _get_batchnorm_parameters(batchnorm_op[i])
-            if relu_op[i][0].op_type.lower() == "relu":
-                self.activation[i] = "relu"
-            assert self.activation[i] == "relu"
-        if len(conv_op) > 3:
-            i = 3
-            conv_weight, conv_bias, conv_kernel_shape, conv_strides, conv_pads = _get_conv_parameters(
-                conv_op[i]
-            )
-            self.conv_weight.append(conv_weight)
-            self.conv_bias.append(conv_bias)
-            self.conv_kernel_shape.append(conv_kernel_shape)
-            self.conv_strides.append(conv_strides)
-            self.conv_pads.append(conv_pads)
-            self.in_features.append(self.conv_weight[i].shape[1])
-            self.out_features.append(self.conv_bias[i].shape[0])
-
-    def __repr__(self):
-        conv_pads = [pads[:2] for pads in self.conv_pads]
-        return (
-            f"ResidualBottleneckV2(\n"
-            f"  {self.in_features[0]},"
-            f"{self.in_features[1]},"
-            f"{self.in_features[2]},"
-            f"{self.out_features[2]},\n"
-            f"  kernel_shape={self.conv_kernel_shape},\n"
-            f"  strides={self.conv_strides},\n"
-            f"  pads={conv_pads},\n"
-            f"  identity={len(self.conv_weight) < 4},\n"
-            f"  broken_residual={not self.use_residual},\n"
-            f")"
-        )
-
-    @Layer.input_shape.setter
-    def input_shape(self, value):
-        self.in_features[0] = value[1]
-        Layer.input_shape.fset(self, value)
-
-    def linearize(self):
-        self.modified = True
-        self.use_residual = False
-        if len(self.conv_weight) == 4:
-            self.conv_weight.pop()
-            self.conv_bias.pop()
-            self.conv_kernel_shape.pop()
-            self.conv_strides.pop()
-            self.conv_pads.pop()
-            self.in_features.pop()
-            self.out_features.pop()
-        return self
-
-    def as_pytorch(self, maintain_weights=False):
-        if not self.dropped:
-            return PytorchResidualBottleneckV2(self, maintain_weights=maintain_weights)
-
-
 class AveragePool(Droppable):
     PATTERNS = [["averagepool"]]
 
@@ -1637,10 +881,10 @@ class AveragePool(Droppable):
         super().__init__(node_list)
         assert len(node_list) == 1
         avgpool_node = node_list[0]
-        self.attributes = {a.name: _as_numpy(a) for a in avgpool_node[0].attribute}
+        self.attributes = {a.name: as_numpy(a) for a in avgpool_node[0].attribute}
         self.kernel_shape = tuple(self.attributes["kernel_shape"])
         self.strides = tuple(self.attributes.get("strides", self.kernel_shape))
-        self.pads = _fix_padding(
+        self.pads = fix_padding(
             tuple(self.attributes.get("pads", (0, 0) * len(self.kernel_shape)))
         )
         self.count_include_pad = self.attributes.get("count_include_pad", False)
@@ -1695,36 +939,36 @@ class AdaptiveAveragePool(GlobalAveragePool):
     def __init__(self, node_list):
         super().__init__(node_list)
         assert node_list[0][0].op_type.lower() == "pad"
-        assert _as_numpy(node_list[0][0].attribute[0]) == "constant"
-        assert np.all(_as_numpy(node_list[0][0].attribute[1]) == 0)
-        assert _as_numpy(node_list[0][0].attribute[2]) == 0.0
+        assert as_numpy(node_list[0][0].attribute[0]) == "constant"
+        assert np.all(as_numpy(node_list[0][0].attribute[1]) == 0)
+        assert as_numpy(node_list[0][0].attribute[2]) == 0.0
 
         assert node_list[1][0].op_type.lower() == "averagepool"
-        assert np.all(_as_numpy(node_list[1][0].attribute[1]) == 0)
-        assert np.all(_as_numpy(node_list[1][0].attribute[2]) == 1)
-        self.kernel_shape = _as_numpy(node_list[1][0].attribute[0])
+        assert np.all(as_numpy(node_list[1][0].attribute[1]) == 0)
+        assert np.all(as_numpy(node_list[1][0].attribute[2]) == 1)
+        self.kernel_shape = as_numpy(node_list[1][0].attribute[0])
         self.checked = False
 
         assert node_list[2][0].op_type.lower() == "shape"
         assert node_list[2][0].input == node_list[1][0].output
 
         assert node_list[3][0].op_type.lower() == "gather"
-        assert np.all(_as_numpy(node_list[3][0].attribute[0]) == 0)
+        assert np.all(as_numpy(node_list[3][0].attribute[0]) == 0)
         assert node_list[3][0].input[0:1] == node_list[2][0].output
 
         assert node_list[4][0].op_type.lower() == "unsqueeze"
-        assert np.all(_as_numpy(node_list[4][0].attribute[0]) == 0)
+        assert np.all(as_numpy(node_list[4][0].attribute[0]) == 0)
         assert node_list[4][0].input == node_list[3][0].output
 
         assert node_list[5][0].op_type.lower() == "unsqueeze"
-        assert np.all(_as_numpy(node_list[5][0].attribute[0]) == 0)
-        assert _as_numpy(node_list[5][1]) == -1
+        assert np.all(as_numpy(node_list[5][0].attribute[0]) == 0)
+        assert as_numpy(node_list[5][1]) == -1
 
         assert node_list[6][0].op_type.lower() == "concat"
         assert list(node_list[6][0].input) == list(node_list[4][0].output) + list(
             node_list[5][0].output
         )
-        assert np.all(_as_numpy(node_list[6][0].attribute[0]) == 0)
+        assert np.all(as_numpy(node_list[6][0].attribute[0]) == 0)
 
         assert node_list[7][0].op_type.lower() == "reshape"
         assert list(node_list[7][0].input) == list(node_list[1][0].output) + list(
@@ -1753,15 +997,15 @@ class _AveragePool(GlobalAveragePool):
     def __init__(self, node_list):
         super().__init__(node_list)
         assert node_list[0][0].op_type.lower() == "pad"
-        assert _as_numpy(node_list[0][0].attribute[0]) == "constant"
-        assert np.all(_as_numpy(node_list[0][0].attribute[1]) == 0)
-        assert _as_numpy(node_list[0][0].attribute[2]) == 0.0
+        assert as_numpy(node_list[0][0].attribute[0]) == "constant"
+        assert np.all(as_numpy(node_list[0][0].attribute[1]) == 0)
+        assert as_numpy(node_list[0][0].attribute[2]) == 0.0
 
         assert node_list[1][0].op_type.lower() == "averagepool"
-        assert np.all(_as_numpy(node_list[1][0].attribute[1]) == 0)
-        self.kernel_shape = _as_numpy(node_list[1][0].attribute[0])
-        assert np.all(_as_numpy(node_list[1][0].attribute[2]) == 1) or np.all(
-            _as_numpy(node_list[1][0].attribute[2]) == self.kernel_shape[0]
+        assert np.all(as_numpy(node_list[1][0].attribute[1]) == 0)
+        self.kernel_shape = as_numpy(node_list[1][0].attribute[0])
+        assert np.all(as_numpy(node_list[1][0].attribute[2]) == 1) or np.all(
+            as_numpy(node_list[1][0].attribute[2]) == self.kernel_shape[0]
         )
         self.checked = False
 
@@ -1787,7 +1031,7 @@ class ResnetV2GlobalAveragePool(GlobalAveragePool):
         relu_op = node_list[1]
         pool_op = node_list[2]
 
-        self.bn_attributes, self.bn_weight, self.bn_bias, self.bn_mean, self.bn_var = _get_batchnorm_parameters(
+        self.bn_attributes, self.bn_weight, self.bn_bias, self.bn_mean, self.bn_var = get_batchnorm_parameters(
             batchnorm_op
         )
         if relu_op[0].op_type.lower() == "relu":
@@ -1822,7 +1066,7 @@ class Reshape(Layer):
         super().__init__(node_list)
         shape = [1, -1]
         if node_list[0][0].op_type.lower() == "reshape":
-            shape = tuple(_as_numpy(node_list[0][2]))
+            shape = tuple(as_numpy(node_list[0][2]))
         self.shape = shape
         self.flatten = False
         if len(shape) == 2 and (shape == (0, -1) or shape[0] == 1 or shape[0] == -1):
@@ -1861,22 +1105,22 @@ class Flatten_(Flatten):
         assert isinstance(node_list[0][1], Layer)
 
         assert node_list[1][0].op_type.lower() == "gather"
-        assert np.all(_as_numpy(node_list[1][0].attribute[0]) == 0)
+        assert np.all(as_numpy(node_list[1][0].attribute[0]) == 0)
         assert node_list[1][0].input[0:1] == node_list[0][0].output
 
         assert node_list[2][0].op_type.lower() == "unsqueeze"
-        assert np.all(_as_numpy(node_list[2][0].attribute[0]) == 0)
+        assert np.all(as_numpy(node_list[2][0].attribute[0]) == 0)
         assert node_list[2][0].input == node_list[1][0].output
 
         assert node_list[3][0].op_type.lower() == "unsqueeze"
-        assert np.all(_as_numpy(node_list[3][0].attribute[0]) == 0)
-        assert _as_numpy(node_list[3][1]) == -1
+        assert np.all(as_numpy(node_list[3][0].attribute[0]) == 0)
+        assert as_numpy(node_list[3][1]) == -1
 
         assert node_list[4][0].op_type.lower() == "concat"
         assert list(node_list[4][0].input) == list(node_list[2][0].output) + list(
             node_list[3][0].output
         )
-        assert np.all(_as_numpy(node_list[4][0].attribute[0]) == 0)
+        assert np.all(as_numpy(node_list[4][0].attribute[0]) == 0)
 
         assert node_list[5][0].op_type.lower() == "reshape"
         assert list(node_list[5][0].input) == list(node_list[0][0].input) + list(
@@ -1903,77 +1147,6 @@ class Transpose(Layer):
     def as_pytorch(self, maintain_weights=False):
         if not self.dropped:
             return PytorchSequential(self, PytorchTranspose(*self.dims))
-
-
-class DronetOutput(Rescalable):
-    PATTERNS = [
-        ["matmul", "add", "matmul", "add", "sigmoid", "concat"],
-        ["gemm", "gemm", "sigmoid", "concat"],
-    ]
-
-    def __init__(self, node_list):
-        super().__init__(node_list)
-        if node_list[0][0].op_type.lower() == "matmul":
-            self.fc1 = MatmulFullyConnected(node_list[0:2])
-            self.fc2 = MatmulFullyConnected(node_list[2:4])
-            fc1_op = node_list[1]
-            fc2_op = node_list[3]
-        else:
-            self.fc1 = GemmFullyConnected(node_list[0:1])
-            self.fc2 = GemmFullyConnected(node_list[1:2])
-            fc1_op = node_list[0]
-            fc2_op = node_list[1]
-
-        sigmoid_op = node_list[-2]
-        concat_op = node_list[-1]
-
-        if sigmoid_op[0].input == fc1_op[0].output:
-            assert concat_op[0].input == [fc2_op[0].output[0], sigmoid_op[0].output[0]]
-            self.layers = [self.fc2, self.fc1]
-        elif sigmoid_op[0].input == fc2_op[0].output:
-            assert concat_op[0].input == [fc1_op[0].output[0], sigmoid_op[0].output[0]]
-            self.layers = [self.fc1, self.fc2]
-        else:
-            raise ValueError("Unknown input to Sigmoid: %s" % sigmoid_op[0].input)
-
-        concat_attributes = {a.name: _as_numpy(a) for a in concat_op[0].attribute}
-        self.concat_axis = concat_attributes["axis"]
-
-    def __repr__(self):
-        return "Concat(%s, Sigmoid(%s), axis=%d)" % (
-            repr(self.fc1),
-            repr(self.fc2),
-            self.concat_axis,
-        )
-
-    @Layer.inputs.setter
-    def inputs(self, value):
-        self.fc1.inputs = value
-        self.fc2.inputs = value
-        Layer.inputs.fset(self, value)
-
-    @Layer.input_shape.setter
-    def input_shape(self, value):
-        assert value[0] == 1
-        self.fc1.input_shape = value
-        self.fc2.input_shape = value
-        self._output_shape = (1, self.fc1.output_shape[1] + self.fc2.output_shape[1])
-        Layer.input_shape.fset(self, value)
-
-    def scale(self, factor):
-        self.fc1.scale(factor)
-        self.fc2.scale(factor)
-
-    def as_pytorch(self, maintain_weights=False):
-        if not self.dropped:
-            return PytorchConcat(
-                self,
-                self.layers[0].as_pytorch(maintain_weights=maintain_weights),
-                torch.nn.Sequential(
-                    self.layers[1].as_pytorch(maintain_weights=maintain_weights),
-                    torch.nn.Sigmoid(),
-                ),
-            )
 
 
 class Softmax(Layer):
@@ -2059,7 +1232,7 @@ class Multiply(Layer):
     def __init__(self, node_list):
         super().__init__(node_list)
         self.shape_preserving = True
-        self.value = _as_numpy(node_list[0][2])
+        self.value = as_numpy(node_list[0][2])
         assert (
             self.value.shape == ()
         ), f"Received tensor of shape {self.value.shape}. Expected ()"
@@ -2111,6 +1284,17 @@ def scale_convolution_stride(layer, factor):
     return layer.scale_stride(factor)
 
 
+def replace_convolution_padding(layer, padding):
+    logger = logging.getLogger(__name__)
+    if layer.dropped:
+        logger.warning(
+            "Skipping replacing convolution padding of dropped layer: %s", layer
+        )
+        return
+    logger.info("Replacing convolutional padding for layer: %s", layer)
+    return layer.replace_padding(padding)
+
+
 def scale_layer(layer, factor):
     logger = logging.getLogger(__name__)
     if layer.dropped:
@@ -2120,17 +1304,17 @@ def scale_layer(layer, factor):
     return layer.scale(factor)
 
 
-def _get_bases(cls):
+def get_bases(cls):
     c = list(cls.__bases__)
     for base in c:
-        c.extend(_get_bases(base))
+        c.extend(get_bases(base))
     return set(c) - set([object])
 
 
-def _get_subclasses(cls):
+def get_subclasses(cls):
     c = list(cls.__subclasses__())
     for sub in c:
-        c.extend(_get_subclasses(sub))
+        c.extend(get_subclasses(sub))
     return set(c)
 
 
@@ -2154,7 +1338,6 @@ class DNN:
             layers[0].input_format = "NCHW"
             Droppable.drop(self.layers[0])
             self.layers = self.layers[1:]
-            # self.layers[0].inputs = layers[0]
         self.input_shape = input_shape
         if input_format == "NHWC":
             self.input_shape = tuple(np.asarray(input_shape)[[0, 3, 1, 2]])
@@ -2167,12 +1350,11 @@ class DNN:
             if not layer.shape_preserving:
                 self.final_layer_index = i
             self.layers_by_type[layer.__class__].append(i)
-            for cls in _get_bases(layer.__class__):
+            for cls in get_bases(layer.__class__):
                 self.layers_by_type[cls].append(i)
 
         self.layer_order = [
             Convolutional,
-            ConvolutionalMaxPool,
             FullyConnected,
             MatmulFullyConnected,
             GemmFullyConnected,
@@ -2344,6 +1526,22 @@ class DNN:
             scale_convolution_stride(layer, factor)
         return self
 
+    def replace_convolution_padding(self, layer_id, padding, layer_type=Convolutional):
+        if isinstance(layer_type, str):
+            if layer_type not in globals():
+                raise ValueError("Unknown layer type: %s" % layer_type)
+            layer_type = globals()[layer_type]
+        if not isinstance(layer_id, Iterable):
+            layer_id = [layer_id]
+        for idx in layer_id:
+            layer = self.layers[idx]
+            if not isinstance(layer, layer_type):
+                raise ValueError("Layer %s is not of type %s" % (layer, layer_type))
+            if self.layers.index(layer) >= self.final_layer_index:
+                raise ValueError("Cannot replace final layer padding.")
+            replace_convolution_padding(layer, padding)
+        return self
+
     def as_pytorch(self, maintain_weights=False):
         if any(layer.modified for layer in self.layers) and maintain_weights:
             raise ValueError("Cannot maintain weights. Network has been modified.")
@@ -2403,11 +1601,7 @@ class Net(nn.Module):
                 PytorchBatchNorm,
             ]:
                 continue
-            elif layer.__class__ in [
-                PytorchResidualBlock,
-                PytorchResidualBottleneckV2,
-                PytorchSequential,
-            ]:
+            elif layer.__class__ in [PytorchResidualBlock, PytorchSequential]:
                 num_neurons = layer.num_neurons(device=device)
                 neuron_count += num_neurons
                 x = torch.ones(layer.output_shape).to(device)
@@ -2436,7 +1630,7 @@ class LayerConverter:
         self.build()
 
     def build(self):
-        for cls in _get_subclasses(Layer):
+        for cls in get_subclasses(Layer):
             for pattern in cls.PATTERNS:
                 last_transition_set = self._transition_set
                 for node in pattern:
@@ -2522,7 +1716,6 @@ class LayerConverter:
                 normed_last_idx = len(node_list) - (idx - last_layer_idx) + 1
                 layer = self.create_layer(
                     last_layer_type,
-                    # node_list[: idx - last_layer_idx - 1],
                     node_list[:normed_last_idx],
                     layer_map,
                     onnx_model.node_map,
@@ -2585,9 +1778,9 @@ class OnnxModel:
                 and node.input[0] in self.var_map
             ):
                 assert len(node.output) == 1
-                attributes = {a.name: _as_numpy(a) for a in node.attribute}
+                attributes = {a.name: as_numpy(a) for a in node.attribute}
                 self.var_map[node.output[0]] = numpy_helper.from_array(
-                    _as_numpy(self.var_map[node.input[0]]).transpose(attributes["perm"])
+                    as_numpy(self.var_map[node.input[0]]).transpose(attributes["perm"])
                 )
                 continue
             for output_name in node.output:

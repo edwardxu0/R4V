@@ -46,5 +46,12 @@ input_format="NHWC"
 model="networks/dave/model.onnx"
 
 [[distillation.strategies.drop_layer]]
-layer_id=[3, 4, 8, 9, 10]
+layer_id=[2, 3, 4, 7, 9]
 
+[[distillation.strategies.forall]]
+layer_type="Convolution"
+strategy="replace_convolution_padding"
+padding="SAME"
+
+[distillation.student]
+path="tmp/dave.test.student.onnx"

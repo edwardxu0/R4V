@@ -44,3 +44,9 @@ def scale_convolution_stride(model, layer_id, factor, layer_type=None):
     else:
         model.scale_convolution_stride(layer_id, factor)
 
+
+def replace_convolution_padding(model, layer_id, padding, layer_type=None):
+    if layer_type is not None:
+        model.replace_convolution_padding(layer_id, padding, layer_type=layer_type)
+    else:
+        model.replace_convolution_padding(layer_id, padding)

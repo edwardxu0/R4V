@@ -42,5 +42,17 @@ model="tests/networks/mnist/conv_bn.onnx"
 layer_type="Convolutional"
 strategy="drop_layer"
 
+[[distillation.strategies.forall]]
+layer_type="BatchNorm"
+strategy="drop_layer"
+
+[[distillation.strategies.forall]]
+layer_type="MaxPool"
+strategy="drop_layer"
+
+[[distillation.strategies.forall]]
+layer_type="Relu"
+strategy="drop_layer"
+
 [distillation.student]
 path="tmp/test_distill_conv_bn/conv_bn_to_fc.student.onnx"
