@@ -2,7 +2,7 @@
 
 ## Installation
 
-The following command should install the necessary python environment. Requires python3.6 and virtualenv to be installed on the system.
+The following command should install the necessary python environment. Requires python3.6+ and [venv](https://docs.python.org/3/library/venv.html) to be installed on the system.
 
 ```bash
 ./install.sh

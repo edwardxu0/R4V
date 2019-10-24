@@ -9,6 +9,7 @@ type="regression"
 epochs=10
 optimizer="adadelta"
 rho=0.95
+learning_rate=0.1
 loss="MSE"
 
 [distillation.data]
@@ -45,8 +46,8 @@ input_shape=[1, 100, 100, 3]
 input_format="NHWC"
 model="networks/dave/model.onnx"
 
-# [[distillation.strategies.drop_layer]]
-# layer_id=[2, 3, 4, 7, 9]
+[[distillation.strategies.drop_layer]]
+layer_id=[2, 3, 4, 7, 9]
 
 [[distillation.strategies.forall]]
 layer_type="Convolutional"

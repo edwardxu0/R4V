@@ -13,6 +13,7 @@ path="plugins/dronet_layers.py"
 epochs=100
 optimizer="adam"
 # loss="MSE"
+weight_decay=1e-5
 loss="balanced_mse"
 
 [distillation.data]

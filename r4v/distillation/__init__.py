@@ -105,6 +105,7 @@ def get_loss_function(loss, params):
                     sy_ = (sy - mean) / (std + self.epsilon)
                     ty_ = (ty - mean) / (std + self.epsilon)
                     return F.mse_loss(sy_, ty_, reduction="sum")
+                self.window = self.window.to(ty.device)
                 self.window = torch.cat([self.window, ty])[-self.window_size :]
                 if len(self.window) == 1:
                     mean = self.window[0]
