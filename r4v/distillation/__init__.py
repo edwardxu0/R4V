@@ -87,7 +87,7 @@ def get_loss_function(loss, params):
 
     elif loss == "mse":
         criterion = torch.nn.MSELoss(reduction="sum")
-        return lambda ty, sy, y: criterion(sy, ty)
+        return lambda ty, sy, y=None: criterion(sy, ty)
     elif loss == "balanced_mse":
         window_size = params.get("window_size", 10000)
         epsilon = params.get("epsilon", 1e-6)
@@ -288,25 +288,27 @@ def train(
         s_x = s_x.to(device)
         y = y.to(device)
         with torch.no_grad():
-            teacher_y = teacher(t_x, cache_ids=idx).to(device).squeeze()
+            teacher_y = teacher(t_x, cache_ids=idx).to(device)
         optimizer.zero_grad()
-        student_y = student(s_x).squeeze()
+        student_y = student(s_x)
         loss = loss_fn(teacher_y, student_y, y)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
         example_count += float(idx.size(0))
-        if (i + 1) % 50 == 0:
+        if (i + 1) % 25 == 0:
             logger.info(
-                "%7d: %.6f %.6f",
+                "(%7d / %7d): %.6f %.6f",
                 (i + 1) * data_loader.batch_size,
+                len(data_loader.dataset),
                 loss.item() / float(idx.size(0)),
                 total_loss / example_count,
             )
         elif (i + 1) % 1 == 0:
             logger.debug(
-                "%7d: %.6f %.6f",
+                "(%7d / %7d): %.6f %.6f",
                 (i + 1) * data_loader.batch_size,
+                len(data_loader.dataset),
                 loss.item() / float(idx.size(0)),
                 total_loss / example_count,
             )
@@ -348,10 +350,8 @@ def validate(teacher, student, data_loader, loss_fn, device, prediction_type, co
         for i, (idx, t_x, s_x, target) in enumerate(data_loader):
             s_x = s_x.to(device)
             target = target.to(device)
-            teacher_y = (
-                teacher(t_x, cache_ids=idx, validation=True).to(device).squeeze()
-            )
-            student_y = student(s_x).squeeze()
+            teacher_y = teacher(t_x, cache_ids=idx, validation=True).to(device)
+            student_y = student(s_x)
             num_samples += target.size(0)
             if prediction_type == "classification":
                 teacher_pred = teacher_y.argmax(-1)
@@ -386,8 +386,9 @@ def validate(teacher, student, data_loader, loss_fn, device, prediction_type, co
                 }
             if (i + 1) % 1 == 0:
                 logger.debug(
-                    "%7d: student=%.6f, teacher=%.6f, relative=%.6f",
+                    "(%7d / %7d): student=%.6f, teacher=%.6f, relative=%.6f",
                     (i + 1) * data_loader.batch_size,
+                    len(data_loader.dataset),
                     error["student"],
                     error["teacher"],
                     error["relative"],

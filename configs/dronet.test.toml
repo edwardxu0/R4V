@@ -10,7 +10,7 @@ name="dronet_layers"
 path="plugins/dronet_layers.py"
 
 [distillation.parameters]
-epochs=50
+epochs=100
 optimizer="adam"
 # loss="MSE"
 loss="balanced_mse"

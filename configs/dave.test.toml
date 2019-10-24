@@ -3,10 +3,10 @@ maxmemory="32G"
 threshold=1e-9
 cuda=true
 type="regression"
-precompute_teacher=true
+# precompute_teacher=true
 
 [distillation.parameters]
-epochs=50
+epochs=10
 optimizer="adadelta"
 rho=0.95
 loss="MSE"
@@ -45,11 +45,11 @@ input_shape=[1, 100, 100, 3]
 input_format="NHWC"
 model="networks/dave/model.onnx"
 
-[[distillation.strategies.drop_layer]]
-layer_id=[2, 3, 4, 7, 9]
+# [[distillation.strategies.drop_layer]]
+# layer_id=[2, 3, 4, 7, 9]
 
 [[distillation.strategies.forall]]
-layer_type="Convolution"
+layer_type="Convolutional"
 strategy="replace_convolution_padding"
 padding="SAME"
 

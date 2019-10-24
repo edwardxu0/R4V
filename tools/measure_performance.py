@@ -37,7 +37,7 @@ def _parse_args():
     )
 
     parser.add_argument(
-        "--loss", default="accuracy", choices=["accuracy", "mse", "mae", "dronet"]
+        "--loss", default="mse", choices=["accuracy", "mse", "mae", "dronet"]
     )
 
     parser.add_argument("--cuda", action="store_true")
@@ -102,9 +102,9 @@ def measure(
         sx = sx.to(device)
         tx = tx.to(device)
         with torch.no_grad():
-            sy = student(sx).squeeze()
+            sy = student(sx)
             if teacher is not None:
-                ty = teacher(tx).squeeze()
+                ty = teacher(tx)
             else:
                 ty = sy
         sy = sy.cpu()
@@ -200,8 +200,12 @@ def measure(
             targets = torch.cat([targets, target])
             student_outputs = torch.cat([student_outputs, sy])
             teacher_outputs = torch.cat([teacher_outputs, ty])
-            student_errors = torch.cat([student_errors, (sy - target)])
-            teacher_errors = torch.cat([teacher_errors, (ty - target)])
+            student_errors = torch.cat(
+                [student_errors, (sy - target.reshape(sy.shape))]
+            )
+            teacher_errors = torch.cat(
+                [teacher_errors, (ty - target.reshape(ty.shape))]
+            )
             stats = {
                 "mean": targets.mean().item(),
                 "std": targets.std().item(),

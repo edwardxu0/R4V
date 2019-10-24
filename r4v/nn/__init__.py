@@ -478,6 +478,9 @@ class Convolutional(Rescalable, Droppable):
 
     def replace_padding(self, padding):
         self.modified = True
+        padding = padding.upper()
+        if padding not in ["SAME", "VALID"]:
+            raise ValueError(f"Unknown padding type: {padding}")
         self.padding = padding
         self.update_output_shape()
         for output in self._outputs:
