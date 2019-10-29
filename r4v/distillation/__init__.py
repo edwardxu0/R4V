@@ -377,8 +377,8 @@ def validate(teacher, student, data_loader, loss_fn, device, prediction_type, co
                     else float("nan"),
                 }
             else:
-                student_error += loss_fn(student_y, target)
-                teacher_error += loss_fn(teacher_y, target)
+                student_error += loss_fn(student_y, target.reshape(student_y.shape))
+                teacher_error += loss_fn(teacher_y, target.reshape(teacher_y.shape))
                 relative_error += loss_fn(student_y, teacher_y)
                 error = {
                     "student": (student_error / num_samples).item(),
