@@ -21,10 +21,11 @@ type="regression"
 precompute_teacher=true
 
 [distillation.parameters]
-epochs=50
+epochs=10
 optimizer="adadelta"
 rho=0.95
 loss="MSE"
+learning_rate=0.1
 
 [distillation.data]
 format="udacity-driving"
