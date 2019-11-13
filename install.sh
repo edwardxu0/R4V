@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-virtualenv -p python3.6 .venv
+python3 -m venv .venv
 . .venv/bin/activate
 
 while read req || [ -n "$req" ]

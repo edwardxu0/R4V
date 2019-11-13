@@ -533,197 +533,6 @@ class PytorchResidualBlockV2(nn.Module):
             return x
 
 
-class PytorchResidualBottleneckV2(nn.Module):
-    def __init__(self, layer, maintain_weights=False):
-        super(PytorchResidualBottleneckV2, self).__init__()
-        assert False, "Pytorch residual bottlenecks are broken"
-        self.use_residual = layer.use_residual
-
-        i = 0
-        self.bn_layer_1 = torch.nn.BatchNorm2d(
-            layer.in_features[i],
-            eps=layer.bn_attributes[i]["epsilon"],
-            momentum=layer.bn_attributes[i]["momentum"],
-        )
-        if not layer.modified and maintain_weights:
-            self.bn_layer_1 = PytorchBatchNorm(
-                layer.bn_mean[i],
-                layer.bn_var[i],
-                layer.bn_weight[i],
-                layer.bn_bias[i],
-                layer.bn_attributes[i]["momentum"],
-                layer.bn_attributes[i]["epsilon"],
-            )
-        self.relu_1 = nn.ReLU()
-        self.conv_padding_1 = nn.ZeroPad2d(layer.conv_pads[i])
-        self.conv_layer_1 = nn.Conv2d(
-            layer.in_features[i],
-            layer.out_features[i],
-            layer.conv_kernel_shape[i],
-            stride=tuple(layer.conv_strides[i]),
-        )
-        if not layer.modified and maintain_weights:
-            self.conv_layer_1.weight.data = torch.from_numpy(layer.conv_weight[i])
-            self.conv_layer_1.bias.data = torch.from_numpy(layer.conv_bias[i])
-        elif maintain_weights:
-            raise ValueError("Cannot maintain weights of modified layer.")
-
-        i = 1
-        self.bn_layer_2 = torch.nn.BatchNorm2d(
-            layer.in_features[i],
-            eps=layer.bn_attributes[i]["epsilon"],
-            momentum=layer.bn_attributes[i]["momentum"],
-        )
-        if not layer.modified and maintain_weights:
-            self.bn_layer_2 = PytorchBatchNorm(
-                layer.bn_mean[i],
-                layer.bn_var[i],
-                layer.bn_weight[i],
-                layer.bn_bias[i],
-                layer.bn_attributes[i]["momentum"],
-                layer.bn_attributes[i]["epsilon"],
-            )
-        self.relu_2 = nn.ReLU()
-        self.conv_padding_2 = nn.ZeroPad2d(layer.conv_pads[i])
-        self.conv_layer_2 = nn.Conv2d(
-            layer.in_features[i],
-            layer.out_features[i],
-            layer.conv_kernel_shape[i],
-            stride=tuple(layer.conv_strides[i]),
-        )
-        if not layer.modified and maintain_weights:
-            self.conv_layer_2.weight.data = torch.from_numpy(layer.conv_weight[i])
-            self.conv_layer_2.bias.data = torch.from_numpy(layer.conv_bias[i])
-
-        i = 2
-        self.bn_layer_3 = torch.nn.BatchNorm2d(
-            layer.in_features[i],
-            eps=layer.bn_attributes[i]["epsilon"],
-            momentum=layer.bn_attributes[i]["momentum"],
-        )
-        if not layer.modified and maintain_weights:
-            self.bn_layer_3 = PytorchBatchNorm(
-                layer.bn_mean[i],
-                layer.bn_var[i],
-                layer.bn_weight[i],
-                layer.bn_bias[i],
-                layer.bn_attributes[i]["momentum"],
-                layer.bn_attributes[i]["epsilon"],
-            )
-        self.relu_3 = nn.ReLU()
-        self.conv_padding_3 = nn.ZeroPad2d(layer.conv_pads[i])
-        self.conv_layer_3 = nn.Conv2d(
-            layer.in_features[i],
-            layer.out_features[i],
-            layer.conv_kernel_shape[i],
-            stride=tuple(layer.conv_strides[i]),
-        )
-        if not layer.modified and maintain_weights:
-            self.conv_layer_3.weight.data = torch.from_numpy(layer.conv_weight[i])
-            self.conv_layer_3.bias.data = torch.from_numpy(layer.conv_bias[i])
-
-        self.conv_layer_4 = None
-        if len(layer.conv_weight) == 4 and layer.use_residual:
-            i = 3
-            self.conv_padding_4 = nn.ZeroPad2d(layer.conv_pads[i])
-            self.conv_layer_4 = nn.Conv2d(
-                layer.in_features[0],
-                layer.out_features[2],  # same number of output features as last conv
-                layer.conv_kernel_shape[i],
-                stride=tuple(layer.conv_strides[i]),
-            )
-            if not layer.modified and maintain_weights:
-                self.conv_layer_4.weight.data = torch.from_numpy(layer.conv_weight[i])
-                self.conv_layer_4.bias.data = torch.from_numpy(layer.conv_bias[i])
-
-        self.operations = (
-            self.bn_layer_1,
-            self.relu_1,
-            self.conv_padding_1,
-            self.conv_layer_1,
-            self.bn_layer_2,
-            self.relu_2,
-            self.conv_padding_2,
-            self.conv_layer_2,
-            self.bn_layer_3,
-            self.relu_3,
-            self.conv_padding_3,
-            self.conv_layer_3,
-        )
-        if self.conv_layer_4 is not None:
-            self.operations += (self.conv_padding_4, self.conv_layer_4)
-
-        self.input_names = layer.input_names
-        self.output_names = layer.output_names
-        self.input_shape = layer.input_shape
-        self.output_shape = layer.output_shape
-
-    def num_neurons(self, device=torch.device("cpu")):
-        neuron_count = 0
-        x = torch.ones(self.input_shape).to(device)
-        residual = x
-
-        if self.conv_layer_4 is not None:
-            residual = self.conv_padding_4(x)
-            residual = self.conv_layer_4(residual)
-
-        x = self.conv_padding_1(x)
-        x = self.conv_layer_1(x)
-        neuron_count += np.product(x.size())
-
-        x = self.conv_padding_2(x)
-        x = self.conv_layer_2(x)
-        neuron_count += np.product(x.size())
-
-        x = self.conv_padding_3(x)
-        x = self.conv_layer_3(x)
-        neuron_count += np.product(x.size())
-
-        if self.conv_layer_4 is not None:
-            neuron_count += np.product(residual.size())
-        return neuron_count
-
-    def infer_output_size(self, input_size):
-        x = torch.zeros(input_size)
-        residual = x
-        if self.conv_layer_4 is not None:
-            residual = self.conv_padding_4(x)
-            residual = self.conv_layer_4(residual)
-        x = self.conv_padding_1(x)
-        x = self.conv_layer_1(x)
-        x = self.conv_padding_2(x)
-        x = self.conv_layer_2(x)
-        x = self.conv_padding_3(x)
-        x = self.conv_layer_3(x)
-        return (x + residual).size()
-
-    def forward(self, x):
-        residual = x
-
-        x = self.bn_layer_1(x)
-        x = self.relu_1(x)
-        if self.conv_layer_4 is not None:
-            residual = self.conv_padding_4(x)
-            residual = self.conv_layer_4(residual)
-        x = self.conv_padding_1(x)
-        x = self.conv_layer_1(x)
-
-        x = self.bn_layer_2(x)
-        x = self.relu_2(x)
-        x = self.conv_padding_2(x)
-        x = self.conv_layer_2(x)
-
-        x = self.bn_layer_3(x)
-        x = self.relu_3(x)
-        x = self.conv_padding_3(x)
-        x = self.conv_layer_3(x)
-
-        if self.use_residual:
-            return x + residual
-        else:
-            return x
-
-
 class PytorchSequential(nn.Module):
     def __init__(self, layer, *operations):
         super(PytorchSequential, self).__init__()
@@ -755,7 +564,6 @@ class PytorchSequential(nn.Module):
             elif layer.__class__ in [
                 PytorchResidualBlock,
                 PytorchResidualBlockV2,
-                PytorchResidualBottleneckV2,
                 PytorchSequential,
             ]:
                 num_neurons = layer.num_neurons(device=device)
@@ -805,11 +613,7 @@ class PytorchConcat(nn.Module):
                 PytorchBatchNorm,
             ]:
                 continue
-            elif layer.__class__ in [
-                PytorchResidualBlock,
-                PytorchResidualBottleneckV2,
-                PytorchSequential,
-            ]:
+            elif layer.__class__ in [PytorchResidualBlock, PytorchSequential]:
                 neuron_count += layer.num_neurons(device=device)
                 x = torch.ones(layer.output_shape).to(device)
             else:

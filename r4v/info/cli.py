@@ -23,5 +23,8 @@ def add_subparser(subparsers: argparse._SubParsersAction):
 
     parser.add_argument("--input_shape", type=int, nargs="+", default=[1, 3, 224, 224])
     parser.add_argument("--input_format", type=str, default="NCHW")
+    parser.add_argument(
+        "--plugins", type=str, nargs="+", default=[], help="plugin modules to load"
+    )
 
     parser.set_defaults(func=info.show)
