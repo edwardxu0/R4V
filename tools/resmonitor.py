@@ -1,11 +1,10 @@
 import argparse
-import os
+import logging
 import psutil
-import shlex
+import signal
 import subprocess as sp
+import sys
 import time
-
-import d4v.logging as logging
 
 
 def memory_t(value):
@@ -21,28 +20,53 @@ def memory_t(value):
         return int(value)
 
 
+def memory_repr(value):
+    if value > 1_000_000_000:
+        return f"{value / 1_000_000_000:.2f}G"
+    elif value > 1_000_000:
+        return f"{value / 1_000_000:.2f}M"
+    elif value > 1_000:
+        return f"{value / 1_000:.2f}K"
+    else:
+        return f"{value}"
+
+
 def _parse_args():
     parser = argparse.ArgumentParser(description="resmonitor - monitor resource usage")
 
+    verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
+    verbosity_group.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="show messages with finer-grained information",
+    )
+    verbosity_group.add_argument(
+        "-q", "--quiet", action="store_true", help="suppress non-essential messages"
+    )
+
     parser.add_argument(
-        "-T", "--time", default=-1, type=int, help="The max running time in seconds."
+        "-T", "--time", default=-1, type=float, help="The max running time in seconds."
     )
     parser.add_argument(
         "-M",
         "--memory",
         default=-1,
         type=memory_t,
-        help="The max allowed memory in seconds.",
+        help="The max allowed memory in bytes.",
     )
 
-    parser.add_argument("prog", nargs=argparse.REMAINDER, help="TEST")
+    parser.add_argument(
+        "prog", nargs=argparse.REMAINDER, help="The program to run and monitor"
+    )
 
     return parser.parse_args()
 
 
 def get_memory_usage():
     try:
-        p = psutil.Process(os.getpid())
+        p = psutil.Process()
         children = p.children(recursive=True)
         memory = 0
         for child in children:
@@ -52,40 +76,85 @@ def get_memory_usage():
     return memory
 
 
+def terminate(signum=None, frame=None):
+    p = psutil.Process()
+    children = p.children(recursive=True)
+    for child in children:
+        child.terminate()
+
+
 def dispatch(prog, max_memory=-1, timeout=-1):
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger("resmonitor")
     proc = sp.Popen(prog)
 
     start_t = time.time()
+    last_log_t = float("-inf")
+    log_period = 2  # seconds
     try:
         while proc.poll() is None:
             time.sleep(0.01)
             now_t = time.time()
             duration_t = now_t - start_t
             mem_usage = get_memory_usage()
-            if max_memory >= 0 and mem_usage >= max_memory:
-                logger.error(
-                    "Out of Memory (killing process): %d > %d", mem_usage, max_memory
+            if now_t - last_log_t > log_period:
+                logger.info(
+                    "Duration: %.3fs, MemUsage: %s", duration_t, memory_repr(mem_usage)
                 )
-                proc.terminate()
+                last_log_t = now_t
+            if max_memory >= 0 and mem_usage >= max_memory:
+                logger.info(
+                    "Duration: %.3fs, MemUsage: %s", duration_t, memory_repr(mem_usage)
+                )
+                logger.error(
+                    "Out of Memory (terminating process): %s > %s",
+                    memory_repr(mem_usage),
+                    memory_repr(mem_usage),
+                )
+                terminate()
                 break
             if timeout >= 0 and duration_t >= timeout:
-                logger.error("Timeout (killing process): %d > %d", duration_t, timeout)
-                proc.terminate()
+                logger.info(
+                    "Duration: %.3fs, MemUsage: %s", duration_t, memory_repr(mem_usage)
+                )
+                logger.error(
+                    "Timeout (terminating process): %.2f > %.2f", duration_t, timeout
+                )
+                terminate()
                 break
         else:
+            logger.info(
+                "Duration: %.3fs, MemUsage: %s", duration_t, memory_repr(mem_usage)
+            )
             logger.info("Process finished successfully.")
-            proc.terminate()
+            terminate()
     except KeyboardInterrupt:
-        logger.error("Received keyboard interupt (killing process)")
-        proc.terminate()
+        logger.info("Duration: %.3fs, MemUsage: %s", duration_t, memory_repr(mem_usage))
+        logger.error("Received keyboard interupt (terminating process)")
+        terminate()
     return proc.wait()
 
 
 def main(args):
-    logger = logging.initialize(
-        __name__, argparse.Namespace(debug=False, quiet=False, verbose=True)
-    )
+    signal.signal(signal.SIGTERM, terminate)
+
+    logger = logging.getLogger("resmonitor")
+
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+    elif args.verbose:
+        logger.setLevel(logging.INFO)
+    elif args.quiet:
+        logger.setLevel(logging.ERROR)
+    else:
+        logger.setLevel(logging.INFO)
+
+    formatter = logging.Formatter(f"%(levelname)-8s %(asctime)s (%(name)s) %(message)s")
+
+    console_handler = logging.StreamHandler(stream=sys.stderr)
+    console_handler.setLevel(logging.DEBUG)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
     return dispatch(args.prog, max_memory=args.memory, timeout=args.time)
 
 
