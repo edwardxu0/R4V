@@ -6,10 +6,11 @@ type="regression"
 precompute_teacher=true
 
 [distillation.parameters]
-epochs=50
+epochs=10
 optimizer="adadelta"
 rho=0.95
 loss="MSE"
+learning_rate=0.1
 
 [distillation.data]
 format="udacity-driving"
@@ -46,5 +47,13 @@ input_format="NHWC"
 model="networks/dave/model.onnx"
 
 [[distillation.strategies.drop_layer]]
-layer_id=[3, 9]
+layer_id=[3]
+
+[[distillation.strategies.scale_layer]]
+factor=0.5
+layer_id=[1, 4, 7, 8]
+
+[[distillation.strategies.scale_layer]]
+factor=0.5
+layer_id=[1, 7, 8]
 
