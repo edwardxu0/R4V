@@ -83,13 +83,12 @@ def terminate(signum=None, frame=None):
         child.terminate()
 
 
-def dispatch(prog, max_memory=-1, timeout=-1):
+def dispatch(prog, max_memory=-1, timeout=-1, log_period=2):
     logger = logging.getLogger("resmonitor")
     proc = sp.Popen(prog)
 
     start_t = time.time()
     last_log_t = float("-inf")
-    log_period = 2  # seconds
     try:
         while proc.poll() is None:
             time.sleep(0.01)
@@ -141,12 +140,16 @@ def main(args):
 
     if args.debug:
         logger.setLevel(logging.DEBUG)
+        log_period = 1  # seconds
     elif args.verbose:
         logger.setLevel(logging.INFO)
+        log_period = 2  # seconds
     elif args.quiet:
         logger.setLevel(logging.ERROR)
+        log_period = float("inf")
     else:
         logger.setLevel(logging.INFO)
+        log_period = 5  # seconds
 
     formatter = logging.Formatter(f"%(levelname)-8s %(asctime)s (%(name)s) %(message)s")
 
@@ -155,7 +158,9 @@ def main(args):
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    return dispatch(args.prog, max_memory=args.memory, timeout=args.time)
+    return dispatch(
+        args.prog, max_memory=args.memory, timeout=args.time, log_period=log_period
+    )
 
 
 if __name__ == "__main__":
