@@ -28,7 +28,10 @@ def _parse_args():
         help="the number of properties to generate",
     )
     parser.add_argument(
-        "-g", "--gamma", type=float, default=10, help="The output range to use."
+        "-e", "--epsilon", type=float, default=2, help="The input radius to use."
+    )
+    parser.add_argument(
+        "-g", "--gamma", type=float, default=10, help="The output radius to use."
     )
 
     parser.add_argument("--seed", type=int, default=0, help="random seed")
@@ -108,7 +111,7 @@ def main(args):
                     f'x = Image("{npy_img_path}")\n'
                     "input_layer = 0\n"
                     "output_layer = -2\n\n"
-                    "epsilon = 2.0\n"
+                    f"epsilon = {args.epsilon}\n"
                     f"gamma = {args.gamma} * np.pi / 180\n"
                     f"output = {steering_angle}\n"
                     "gamma_lb = max(-np.pi / 2, (output - gamma) / 2)\n"
@@ -128,7 +131,7 @@ def main(args):
                     f'x = Image("{npy_img_path}")\n'
                     "input_layer = 0\n"
                     "output_layer = -2\n\n"
-                    "epsilon = 2.0\n"
+                    f"epsilon = {args.epsilon}\n"
                     f"gamma_lb = {collision_prob_lb}\n"
                     f"gamma_ub = {collision_prob_ub}\n"
                     "Forall(\n"
