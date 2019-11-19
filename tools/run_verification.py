@@ -71,8 +71,19 @@ def wait(pool, timeout=float("inf")):
     start_t = time.time()
     while time.time() - start_t < timeout:
         for index, task in enumerate(pool):
+            stderr_line = task.stderr.readline().strip()
+            task.stderr_lines.append(stderr_line)
+            print(f"{{{task.network}.{task.prop} (STDERR)}}: {stderr_line}")
             if task.poll() is not None:
+                task.stdout = "\n".join(task.stdout_lines) + task.stdout.read()
+                task.stderr = "\n".join(task.stderr_lines) + task.stderr.read()
                 return pool.pop(index)
+    for index, task in enumerate(pool):
+        if task.poll() is not None:
+            task.stdout = "\n".join(task.stdout_lines) + task.stdout.read()
+            task.stderr = "\n".join(task.stderr_lines) + task.stderr.read()
+            return pool.pop(index)
+    raise RuntimeError("Timeout while waiting for task completion.")
 
 
 def parse_verification_output(stdout, stderr):
@@ -146,13 +157,15 @@ def main(args):
         )
         proc.network = network
         proc.prop = prop
+        proc.stdout_lines = []
+        proc.stderr_lines = []
         pool.append(proc)
 
         while len(pool) >= args.ntasks:
-            finished_task = wait(pool)
+            finished_task = wait(pool, timeout=2 * args.time)
             print("FINISHED:", " ".join(proc.args))
-            stdout = finished_task.stdout.read()
-            stderr = finished_task.stderr.read()
+            stdout = finished_task.stdout
+            stderr = finished_task.stderr
             result, time = parse_verification_output(stdout, stderr)
             update_results(
                 args.results_csv,
@@ -162,10 +175,10 @@ def main(args):
                 time,
             )
     while len(pool):
-        finished_task = wait(pool)
+        finished_task = wait(pool, timeout=2 * args.time)
         print("FINISHED:", " ".join(proc.args))
-        stdout = finished_task.stdout.read()
-        stderr = finished_task.stderr.read()
+        stdout = finished_task.stdout
+        stderr = finished_task.stderr
         result, time = parse_verification_output(stdout, stderr)
         update_results(
             args.results_csv, finished_task.network, finished_task.prop, result, time
