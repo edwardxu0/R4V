@@ -3,6 +3,7 @@ import argparse
 import contextlib
 import os
 import pandas as pd
+import select
 import shlex
 import subprocess as sp
 import time
@@ -71,38 +72,48 @@ def wait(pool, timeout=float("inf")):
     start_t = time.time()
     while time.time() - start_t < timeout:
         for index, task in enumerate(pool):
-            stderr_line = task.stderr.readline().strip()
-            task.stderr_lines.append(stderr_line)
-            print(f"{{{task.network}.{task.prop} (STDERR)}}: {stderr_line}")
+            while select.select([task.stderr], [], [], 0)[0]:
+                stderr_line = task.stderr.readline()
+                if stderr_line == "":
+                    break
+                task.stderr_lines.append(stderr_line)
+                print(f"{{{task.network}.{task.prop} (STDERR)}}: {stderr_line.strip()}")
             if task.poll() is not None:
-                task.stdout = "\n".join(task.stdout_lines) + task.stdout.read()
-                task.stderr = "\n".join(task.stderr_lines) + task.stderr.read()
+                task.stdout_lines.extend(task.stdout.readlines())
+                task.stderr_lines.extend(task.stderr.readlines())
                 return pool.pop(index)
     for index, task in enumerate(pool):
         if task.poll() is not None:
-            task.stdout = "\n".join(task.stdout_lines) + task.stdout.read()
-            task.stderr = "\n".join(task.stderr_lines) + task.stderr.read()
+            task.stdout_lines.extend(task.stdout.readlines())
+            task.stderr_lines.extend(task.stderr.readlines())
             return pool.pop(index)
     raise RuntimeError("Timeout while waiting for task completion.")
 
 
-def parse_verification_output(stdout, stderr):
+def parse_verification_output(stdout_lines, stderr_lines):
     time = None
-    if "finished successfully" in stderr:
+    result_line = stderr_lines[-1]
+    if "finished successfully" in result_line:
         try:
-            stdout_lines = stdout.split("\n")
-            result = stdout_lines[-3].split()[-1]
-            time = float(stdout_lines[-2].split()[-1])
-        except:
-            result = "error"
-    elif "Out of Memory" in stderr:
+            result_lines = []
+            at_result = False
+            for line in stdout_lines:
+                if "dnnv.verifiers" in line:
+                    at_result = True
+                elif at_result:
+                    result_lines.append(line.strip())
+            if len(result_lines) > 2:
+                print("ERROR>>", result_lines)
+            result = result_lines[0].split()[-1]
+            time = float(result_lines[1].split()[-1])
+        except Exception as e:
+            result = f"error({type(e).__name__})"
+    elif "Out of Memory" in result_line:
         result = "outofmemory"
-        stderr_lines = stderr.split("\n")
-        time = float(stderr_lines[-3].split()[-3][:-2])
-    elif "Timeout" in stderr:
+        time = float(stderr_lines[-2].split()[-3][:-2])
+    elif "Timeout" in result_line:
         result = "timeout"
-        stderr_lines = stderr.split("\n")
-        time = float(stderr_lines[-3].split()[-3][:-2])
+        time = float(stderr_lines[-2].split()[-3][:-2])
     else:
         result = "!"
     print("  result:", result)
@@ -164,9 +175,9 @@ def main(args):
         while len(pool) >= args.ntasks:
             finished_task = wait(pool, timeout=2 * args.time)
             print("FINISHED:", " ".join(proc.args))
-            stdout = finished_task.stdout
-            stderr = finished_task.stderr
-            result, time = parse_verification_output(stdout, stderr)
+            result, time = parse_verification_output(
+                finished_task.stdout_lines, finished_task.stderr_lines
+            )
             update_results(
                 args.results_csv,
                 finished_task.network,
@@ -177,9 +188,9 @@ def main(args):
     while len(pool):
         finished_task = wait(pool, timeout=2 * args.time)
         print("FINISHED:", " ".join(proc.args))
-        stdout = finished_task.stdout
-        stderr = finished_task.stderr
-        result, time = parse_verification_output(stdout, stderr)
+        result, time = parse_verification_output(
+            finished_task.stdout_lines, finished_task.stderr_lines
+        )
         update_results(
             args.results_csv, finished_task.network, finished_task.prop, result, time
         )
