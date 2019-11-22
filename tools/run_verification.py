@@ -104,6 +104,8 @@ def parse_verification_output(stdout_lines, stderr_lines):
                     result_lines.append(line.strip())
             if len(result_lines) > 2:
                 print("ERROR>>", result_lines)
+            if len(result_lines) < 2:
+                print("ERROR<<", stdout_lines)
             result = result_lines[0].split()[-1]
             time = float(result_lines[1].split()[-1])
         except Exception as e:
