@@ -254,17 +254,6 @@ def get_data_transform(
     data_transforms.append(transforms.ToTensor())
     if is_bgr:
         data_transforms.append(transforms.Lambda(lambda t: t[[2, 1, 0]]))
-    data_transforms.append(
-        transforms.Lambda(lambda t: t * transform_config.get("max_value", 1.0))
-    )
-    transform_normalize_mean = transform_config.get("mean", None)
-    if transform_normalize_mean is not None:
-        data_transforms.append(
-            transforms.Normalize(
-                mean=transform_normalize_mean,
-                std=transform_config.get("std", [1.0] * len(transform_normalize_mean)),
-            )
-        )
     if not transform_config.get("presized", True):
         data_transforms.append(transforms.ToPILImage())
         resize_height = transform_config.get("height", default_height)
@@ -278,6 +267,17 @@ def get_data_transform(
             crop_width = transform_config.get("crop_width", default_crop_width)
             data_transforms.append(transforms.CenterCrop((crop_height, crop_width)))
         data_transforms.append(transforms.ToTensor())
+    data_transforms.append(
+        transforms.Lambda(lambda t: t * transform_config.get("max_value", 1.0))
+    )
+    transform_normalize_mean = transform_config.get("mean", None)
+    if transform_normalize_mean is not None:
+        data_transforms.append(
+            transforms.Normalize(
+                mean=transform_normalize_mean,
+                std=transform_config.get("std", [1.0] * len(transform_normalize_mean)),
+            )
+        )
     transform = transforms.Compose(data_transforms)
     return transform
 
