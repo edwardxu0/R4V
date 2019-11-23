@@ -68,7 +68,7 @@ def DAVE(input_tensor=None, load_weights=True):  # original dave
     x = Dense(50, activation="relu", name="fc3")(x)
     x = Dense(10, activation="relu", name="fc4")(x)
     x = Dense(1, name="before_prediction")(x)
-    # x = Lambda(atan_layer, output_shape=atan_layer_shape, name="prediction")(x)
+    x = Lambda(atan_layer, output_shape=atan_layer_shape, name="prediction")(x)
 
     m = Model(input_tensor, x)
     if load_weights:
