@@ -27,45 +27,12 @@ def _parse_args():
     return parser.parse_args()
 
 
-def add_atan_output(model):
-    nodes = list(model.graph.node)
-    nodes.append(
-        helper.make_node("Atan", inputs=[nodes[-1].output[0]], outputs=["atan_output"])
-    )
-    nodes.append(
-        helper.make_node(
-            "Mul", inputs=["atan_output", "atan_mul_val"], outputs=["atan_output_2"]
-        )
-    )
-
-    initializers = list(model.graph.initializer)
-    initializers.append(
-        numpy_helper.from_array(np.array(2.0, dtype=np.float32), name="atan_mul_val")
-    )
-
-    print("\n===================")
-    for node in nodes:
-        print(node.op_type, node.input, node.output)
-
-    new_output = [
-        helper.make_tensor_value_info("atan_output_2", onnx.TensorProto.FLOAT, (1, 1))
-    ]
-    graph = helper.make_graph(
-        nodes, "dave", model.graph.input, new_output, initializers
-    )
-    model = helper.make_model(graph)
-
-    return model
-
-
 def main(args):
     spec = importlib.util.spec_from_file_location("model", args.dave_path)
     model = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(model)
 
     onnx_model = onnxmltools.convert_keras(model.DAVE())
-    onnx_model = add_atan_output(onnx_model)
-
     onnxmltools.utils.save_model(onnx_model, args.output_path)
 
 

@@ -190,8 +190,8 @@ def measure(
             else:
                 raise ValueError("Unknown loss function type: %s" % loss_fn_type)
             rel_loss += loss_fn(sy, ty) * target.size(0)
-            s_loss += loss_fn(sy, target) * target.size(0)
-            t_loss += loss_fn(ty, target) * target.size(0)
+            s_loss += loss_fn(sy, target.reshape(sy.shape)) * target.size(0)
+            t_loss += loss_fn(ty, target.reshape(ty.shape)) * target.size(0)
             performance = {
                 "student_loss": s_loss / num_samples,
                 "teacher_loss": t_loss / num_samples,
