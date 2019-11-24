@@ -25,7 +25,7 @@ epochs=10
 optimizer="adadelta"
 rho=0.95
 loss="MSE"
-learning_rate=0.1
+learning_rate=1.0
 
 [distillation.data]
 format="udacity-driving"
