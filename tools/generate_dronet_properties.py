@@ -159,8 +159,8 @@ def main(args):
                     "    x_,\n"
                     "    Implies(\n"
                     "        ((x - epsilon) < x_ < (x + epsilon)),\n"
-                    "        Implies(output < 0.5, N[input_layer:output_layer, output_select](x_) < 0.5)\n"
-                    "        & Implies(output > 0.5, N[input_layer:output_layer, output_select](x_) > 0.5),\n"
+                    "        Implies(output < 0.5, N[input_layer:output_layer, output_select](x_) < 0.0)\n"
+                    "        & Implies(output > 0.5, N[input_layer:output_layer, output_select](x_) > 0.0),\n"
                     "    ),\n"
                     ")\n"
                 )
