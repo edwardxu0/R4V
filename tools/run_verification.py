@@ -29,7 +29,7 @@ def _parse_args():
     parser.add_argument("results_csv", type=Path)
     parser.add_argument("model_dir", type=Path)
     parser.add_argument("property_csv", type=Path)
-    parser.add_argument("verifier", choices=["eran", "neurify", "planet", "reluplex"])
+    parser.add_argument("verifier", choices=["eran", "neurify", "planet", "reluplex", "mipverify"])
 
     parser.add_argument(
         "-n",
@@ -103,7 +103,7 @@ def parse_verification_output(stdout_lines, stderr_lines):
                 elif at_result and ("  result:" in line) or ("  time:" in line):
                     result_lines.append(line.strip())
             print("DEBUG<<", stdout_lines)
-            result = result_lines[0].split()[-1]
+            result = result_lines[0].split(maxsplit=1)[-1]
             time = float(result_lines[1].split()[-1])
         except Exception as e:
             result = f"error({type(e).__name__})"
