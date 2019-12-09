@@ -100,12 +100,9 @@ def parse_verification_output(stdout_lines, stderr_lines):
             for line in stdout_lines:
                 if "dnnv.verifiers" in line:
                     at_result = True
-                elif at_result:
+                elif at_result and "  result:" in at_result or "  time:" in at_result:
                     result_lines.append(line.strip())
-            if len(result_lines) > 2:
-                print("ERROR>>", result_lines)
-            if len(result_lines) < 2:
-                print("ERROR<<", stdout_lines)
+            print("DEBUG<<", stdout_lines)
             result = result_lines[0].split()[-1]
             time = float(result_lines[1].split()[-1])
         except Exception as e:
