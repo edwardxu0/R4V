@@ -160,7 +160,8 @@ def main(args):
         resmonitor = "python ./tools/resmonitor.py"
         resmonitor_args = f"{resmonitor} -M {args.memory} -T {args.time}"
         verifier_args = f"python -m dnnv {args.model_dir / network} {property_filename} --{args.verifier}"
-        slurm_args = "srun --exclusive -n1 " if os.environ.get("SLURM_JOB_NAME") else ""
+        # slurm_args = "srun --exclusive -n1 " if os.environ.get("SLURM_JOB_NAME") else ""
+        slurm_args = ""
         run_args = f"{slurm_args}{resmonitor_args} {verifier_args}"
         print(run_args)
 
