@@ -100,13 +100,14 @@ def parse_verification_output(stdout_lines, stderr_lines):
             for line in stdout_lines:
                 if "dnnv.verifiers" in line:
                     at_result = True
-                elif at_result and "  result:" in at_result or "  time:" in at_result:
+                elif at_result and ("  result:" in line) or ("  time:" in line):
                     result_lines.append(line.strip())
             print("DEBUG<<", stdout_lines)
             result = result_lines[0].split()[-1]
             time = float(result_lines[1].split()[-1])
         except Exception as e:
             result = f"error({type(e).__name__})"
+            raise e
     elif "Out of Memory" in result_line:
         result = "outofmemory"
         time = float(stderr_lines[-2].split()[-3][:-2])
@@ -159,7 +160,8 @@ def main(args):
         resmonitor = "python ./tools/resmonitor.py"
         resmonitor_args = f"{resmonitor} -M {args.memory} -T {args.time}"
         verifier_args = f"python -m dnnv {args.model_dir / network} {property_filename} --{args.verifier}"
-        run_args = f"srun --exclusive -n1 {resmonitor_args} {verifier_args}"
+        slurm_args = "srun --exclusive -n1 " if os.environ.get("SLURM_JOB_NAME") else ""
+        run_args = f"{slurm_args}{resmonitor_args} {verifier_args}"
         print(run_args)
 
         proc = sp.Popen(
