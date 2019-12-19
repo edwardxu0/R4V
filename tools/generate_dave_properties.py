@@ -89,7 +89,7 @@ def main(args):
                 "output_layer = -2\n\n"
                 f"epsilon = {args.epsilon}\n"
                 f"gamma = {args.gamma} * np.pi / 180\n"
-                "output = N[input_layer:output_layer](x)\n"
+                "output = N[input_layer:](x)\n"
                 "gamma_lb = np.tan(max(-np.pi / 2, (output - gamma) / 2))\n"
                 "gamma_ub = np.tan(min(np.pi / 2, (output + gamma) / 2))\n"
                 "Forall(\n"

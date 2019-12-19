@@ -126,24 +126,6 @@ def main(args):
                     ")\n"
                 )
             elif property_type == "collision":
-                # property_file.write(
-                #     "from dnnv.properties import *\n"
-                #     'N = Network("N")\n'
-                #     f'x = Image("{npy_img_path}")\n'
-                #     "input_layer = 0\n"
-                #     "output_layer = -2\n"
-                #     "output_select = 1\n\n"
-                #     f"epsilon = {args.epsilon}\n"
-                #     f"gamma_lb = {collision_prob_lb}\n"
-                #     f"gamma_ub = {collision_prob_ub}\n"
-                #     "Forall(\n"
-                #     "    x_,\n"
-                #     "    Implies(\n"
-                #     "        ((x - epsilon) < x_ < (x + epsilon)),\n"
-                #     "        (gamma_lb < N[input_layer:output_layer, output_select](x_) < gamma_ub),\n"
-                #     "    ),\n"
-                #     ")\n"
-                # )
                 property_file.write(
                     "from dnnv.properties import *\n"
                     'N = Network("N")\n'
