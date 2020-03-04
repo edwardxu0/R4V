@@ -323,12 +323,23 @@ def image_net(data_config):
 def udacity_driving(data_config):
     batch_size = data_config.batch_size
 
-    transform = get_data_transform(
-        data_config.transform, default_height=100, default_width=100
+    transform_config = data_config.transform
+
+    teacher_transform = get_data_transform(
+        transform_config.get("teacher", transform_config),
+        default_height=100,
+        default_width=100,
+    )
+    student_transform = get_data_transform(
+        transform_config.get("student", transform_config),
+        default_height=100,
+        default_width=100,
     )
 
     dataset = UdacityDriving(
-        data_config.teacher.path, data_config.student.path, transforms=transform
+        data_config.teacher.path,
+        data_config.student.path,
+        transforms=[teacher_transform, student_transform],
     )
     return DataLoader(
         dataset,
