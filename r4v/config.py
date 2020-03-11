@@ -2,6 +2,8 @@ import importlib
 import toml
 
 from functools import partial
+from types import ModuleType
+from typing import Dict
 
 from . import logging
 
@@ -23,7 +25,7 @@ def parse(config_filename, override={}):
 
 
 class Configuration:
-    PLUGINS = {}
+    PLUGINS: Dict[str, ModuleType] = {}
 
     def __init__(self, config):
         self.config = config
