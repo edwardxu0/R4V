@@ -9,12 +9,14 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
 from torch.utils.data import DataLoader
-from torchvision.datasets.folder import (
-    default_loader,
-    find_classes,
-    make_dataset,
-    IMG_EXTENSIONS,
-)
+from torchvision.datasets.folder import default_loader, make_dataset, IMG_EXTENSIONS
+
+
+def find_classes(root):
+    classes = [d.name for d in os.scandir(root) if d.is_dir()]
+    classes.sort()
+    class_to_idx = {classes[i]: i for i in range(len(classes))}
+    return classes, class_to_idx
 
 
 class TeacherStudentDataset(data.Dataset):

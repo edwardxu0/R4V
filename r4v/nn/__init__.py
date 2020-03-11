@@ -8,6 +8,7 @@ from collections import defaultdict, Iterable
 from functools import partial
 from itertools import chain
 from onnx import numpy_helper
+from typing import List, Optional
 
 from .. import logging
 from .pytorch import (
@@ -145,7 +146,7 @@ def load_network(config):
 
 
 class Layer:
-    PATTERNS = []
+    PATTERNS: List[List[str]] = []
 
     def __init__(self, node_list):
         self.node_list = node_list
@@ -171,6 +172,9 @@ class Layer:
 
     @inputs.setter
     def inputs(self, value):
+        return self._set_inputs(value)
+
+    def _set_inputs(self, value):
         if not isinstance(value, list):
             value = [value]
         self._inputs = value
@@ -188,6 +192,9 @@ class Layer:
 
     @input_shape.setter
     def input_shape(self, value):
+        self._set_input_shape(value)
+
+    def _set_input_shape(self, value):
         self._input_shape = value
         old_output_shape = np.array(self.output_shape)
         self.update_output_shape()
@@ -269,8 +276,7 @@ class Input(Layer):
         self._input_shape = input_shape
         self._output_shape = self.input_shape
 
-    @Layer.input_shape.setter
-    def input_shape(self, value):
+    def _set_input_shape(self, value):
         self._input_shape = value
         self._output_shape = value
         for output in self.outputs:
@@ -278,8 +284,6 @@ class Input(Layer):
 
 
 class FullyConnected(Rescalable, Droppable):
-    PATTERNS = []
-
     def __init__(self, node_list):
         super().__init__(node_list)
         node_list = [
@@ -312,8 +316,7 @@ class FullyConnected(Rescalable, Droppable):
             f"dropout={self.dropout})"
         )
 
-    @Layer.input_shape.setter
-    def input_shape(self, value):
+    def _set_input_shape(self, value):
         assert value[0] == 1
         self.in_features = value[1]
         self._input_shape = value
@@ -455,10 +458,9 @@ class Convolutional(Rescalable, Droppable):
             f"activation={self.activation})"
         )
 
-    @Layer.input_shape.setter
-    def input_shape(self, value):
+    def _set_input_shape(self, value):
         self.in_features = value[1]
-        Layer.input_shape.fset(self, value)
+        Layer._set_input_shape(self, value)
 
     def scale(self, factor):
         self.modified = True
@@ -596,10 +598,9 @@ class BatchNorm(Droppable):
     def __repr__(self):
         return f"BatchNorm()"
 
-    @Layer.input_shape.setter
-    def input_shape(self, value):
+    def _set_input_shape(self, value):
         self.in_features = self.out_features = value[1]
-        Layer.input_shape.fset(self, value)
+        Layer._set_input_shape(self, value)
 
     def as_pytorch(self, maintain_weights=False):
         if not self.dropped:
@@ -809,10 +810,9 @@ class ResidualBlock(ResidualConnection, Droppable, DroppableOperations):
             f")"
         )
 
-    @Layer.input_shape.setter
-    def input_shape(self, value):
+    def _set_input_shape(self, value):
         self.in_features[0] = value[1]
-        Layer.input_shape.fset(self, value)
+        Layer._set_input_shape(self, value)
         if not self.downsample and self.out_features[-1] != self.in_features[0]:
             self.downsample = "ResizingBottleneck"
             self.ds_conv_kernel_shape = (1, 1)
@@ -978,9 +978,8 @@ class AdaptiveAveragePool(GlobalAveragePool):
             node_list[6][0].output
         )
 
-    @Layer.input_shape.setter
-    def input_shape(self, value):
-        Layer.input_shape.fset(self, value)
+    def _set_input_shape(self, value):
+        Layer._set_input_shape(self, value)
         if not self.checked:
             assert tuple(self.input_shape[-2:]) == tuple(
                 self.kernel_shape
@@ -1012,9 +1011,8 @@ class _AveragePool(GlobalAveragePool):
         )
         self.checked = False
 
-    @Layer.input_shape.setter
-    def input_shape(self, value):
-        Layer.input_shape.fset(self, value)
+    def _set_input_shape(self, value):
+        Layer._set_input_shape(self, value)
         if not self.checked:
             assert tuple(self.input_shape[-2:]) == tuple(self.kernel_shape)
             self.checked = True
@@ -1545,9 +1543,13 @@ class DNN:
             replace_convolution_padding(layer, padding)
         return self
 
-    def as_pytorch(self, maintain_weights=False):
+    def as_pytorch(self, maintain_weights: Optional[bool] = None):
         if any(layer.modified for layer in self.layers) and maintain_weights:
             raise ValueError("Cannot maintain weights. Network has been modified.")
+        if maintain_weights is None:
+            maintain_weights = True
+            if any(layer.modified for layer in self.layers):
+                maintain_weights = False
         return Net(
             [
                 layer.as_pytorch(maintain_weights=maintain_weights)

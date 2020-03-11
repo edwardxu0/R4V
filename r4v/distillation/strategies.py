@@ -1,11 +1,14 @@
 from functools import partial
+from typing import List, Optional, Union
 
 
-def drop_layer(model, layer_id, layer_type=None):
-    if layer_type is not None:
-        model.drop_layer(layer_id, layer_type=layer_type)
-    else:
-        model.drop_layer(layer_id)
+def drop_layer(
+    model, layer_id: Union[List[int], int], layer_type: Optional[str] = None
+):
+    if isinstance(layer_id, int):
+        layer_id = [layer_id]
+    for lid in layer_id:
+        model.drop_layer(lid, layer_type=layer_type)
 
 
 def drop_operation(model, layer_id, op_type, layer_type=None):

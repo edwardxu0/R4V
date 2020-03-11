@@ -10,7 +10,7 @@ from .cli import add_subparser
 from .config import DistillationConfiguration
 from .data import get_data_loader
 from .. import logging
-from ..nn import load_network
+from ..nn_v2 import load_network
 
 
 class DistillationError(RuntimeError):
@@ -178,12 +178,16 @@ def precompute_cache(dnn, train_loader, val_loader, config, device="cpu"):
 
 def distill(config: DistillationConfiguration) -> None:
     logger = logging.getLogger(__name__)
+    
     device = get_device(config)
     logger.info("Using device: %s", device)
-    network = load_network(config.teacher)
-    teacher = network.as_pytorch(maintain_weights=True)
-    student = transform_network(network, config).as_pytorch()
-    is_smaller = _check_smaller(teacher, student)
+
+    teacher_network = load_network(config.teacher)
+    student_network = teacher_network.clone()
+    teacher = teacher_network.as_pytorch(maintain_weights=True)
+    student = transform_network(student_network, config).as_pytorch()
+
+    is_smaller = _check_smaller(teacher_network, student_network)
     if config.get("ensure_reduction", False):
         assert is_smaller, "the student network must be no larger than the teacher"
 
