@@ -10,7 +10,7 @@ from r4v.config import parse
 logging.initialize("r4v", argparse.Namespace(quiet=True, debug=False, verbose=False))
 
 
-class TestDistillConvBatchNormNetwork(unittest.TestCase):
+class TestDistillResidualNetwork(unittest.TestCase):
     def distill_and_check_accuracy(self, config_path, delta=0.05):
         config = parse(config_path)
         distillation_config = config.distillation
@@ -33,7 +33,7 @@ class TestDistillConvBatchNormNetwork(unittest.TestCase):
 
     def test_residual_to_fc(self):
         self.distill_and_check_accuracy(
-            "tests/test_distill_residual/residual_to_fc.toml", delta=0.06
+            "tests/test_distill_residual/residual_to_fc.toml"
         )
 
     def test_residual_to_conv_bn(self):

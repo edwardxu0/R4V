@@ -20,12 +20,12 @@ class Net(nn.Module):
         self.fc4 = nn.Linear(100, 10)
 
     def forward(self, x):
-        x = x.view(x.size(0), -1)
+        x = x.flatten(1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
         x = self.fc4(x)
-        return F.log_softmax(x, dim=1)
+        return x
 
 
 def train(args, model, device, train_loader, optimizer, epoch):
@@ -34,7 +34,7 @@ def train(args, model, device, train_loader, optimizer, epoch):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        loss = F.nll_loss(output, target)
+        loss = F.nll_loss(F.log_softmax(output, dim=1), target)
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
@@ -58,7 +58,7 @@ def test(args, model, device, test_loader):
             data, target = data.to(device), target.to(device)
             output = model(data)
             test_loss += F.nll_loss(
-                output, target, reduction="sum"
+                F.log_softmax(output, dim=1), target, reduction="sum"
             ).item()  # sum up batch loss
             pred = output.argmax(
                 dim=1, keepdim=True
@@ -177,8 +177,14 @@ def main():
         test(args, model, device, test_loader)
 
     if args.save_model:
-        dummy_input = torch.ones((1, 1, 28, 28))
-        torch.onnx.export(model, dummy_input, "fc.onnx")
+        dummy_input = torch.ones((1, 1, 28, 28)).to(device)
+        torch.onnx.export(
+            model,
+            dummy_input,
+            "fc.onnx",
+            input_names=["input"],
+            dynamic_axes={"input": [0]},
+        )
 
 
 if __name__ == "__main__":

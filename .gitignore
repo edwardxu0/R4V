@@ -116,3 +116,4 @@ artifacts/udacity.sdc*
 r4v.tar.gz
 results*
 properties/*
+**/data/*
