@@ -2,8 +2,11 @@ import torch.nn as nn
 
 from dnnv.nn.graph import OperationGraph
 from dnnv.nn.operations import Atan as AtanOp
+from dnnv.nn.operations import LogSoftmax as LogSoftmaxOp
 from dnnv.nn.operations import Mul as MulOp
 from dnnv.nn.operations import Operation
+from numbers import Number
+from typing import Tuple
 
 from .base import Layer, SizePreserving
 from .utils import single
@@ -26,10 +29,38 @@ class Atan(SizePreserving):
         return PytorchAtan()
 
 
+class LogSoftmax(SizePreserving):
+    OP_PATTERN = LogSoftmaxOp
+
+    def __init__(
+        self, input_shape: Tuple[int, ...], output_shape: Tuple[int, ...], axis: int = 1
+    ):
+        super().__init__(input_shape, output_shape)
+        self.axis = axis
+
+    def __repr__(self):
+        return f"LogSoftmax(axis={self.axis})"
+
+    @classmethod
+    def from_operation_graph(cls, op_graph: OperationGraph):
+        input_shape = op_graph.input_shape
+        assert len(input_shape) == 1
+
+        op: LogSoftmaxOp = single(op_graph.output_operations)
+        axis = op.axis
+
+        return cls(input_shape[0], input_shape[0], axis)
+
+    def as_pytorch(self, maintain_weights: bool = False) -> nn.Module:
+        return nn.LogSoftmax(dim=self.axis)
+
+
 class Mul(SizePreserving):
     OP_PATTERN = MulOp
 
-    def __init__(self, input_shape, output_shape, const):
+    def __init__(
+        self, input_shape: Tuple[int, ...], output_shape: Tuple[int, ...], const: Number
+    ):
         super().__init__(input_shape, output_shape)
         self.const = const
 

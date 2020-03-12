@@ -5,19 +5,25 @@ import torch.nn as nn
 from copy import deepcopy
 from dnnv.nn import parse
 from pathlib import Path
-from typing import List, Optional, Sequence, Type, Union
+from typing import Callable, Dict, List, Optional, Sequence, Type, Union
+from typing_extensions import TypedDict
 
 from .layers import Layer
-from .layers import Droppable, Scalable, SizePreserving
+from .layers import Droppable, Linearizable, Scalable, SizePreserving
 from .. import logging
 from ..config import Configuration
 from ..errors import NetworkParseError, R4VError
 from ..utils import get_subclasses
 
+LayerExclusions = TypedDict(
+    "LayerExclusions",
+    {"layer_type": Union[str, List[str]], "layer_id": Union[int, List[int]]},
+)
+
 
 def load_network(config: Configuration):
     op_graph = parse(Path(config["model"])).simplify()
-    if config["input_format"] == "NHWC":
+    if config.get("input_format", "NCHW") == "NHWC":
         op_graph = op_graph[2:]  # TODO : Double check this. Make more robust
     layer_types: List[Type[Layer]] = list(get_subclasses(Layer))
     layers: List[Layer] = []
@@ -78,6 +84,42 @@ class DNN:
             input_shape = layer.output_shape
         return self
 
+    def forall_layers(
+        self,
+        layer_type: Optional[Union[str, Type[Layer]]],
+        strategy: Callable,
+        excluding: LayerExclusions,
+    ):
+        layer_types = {t.__name__: t for t in get_subclasses(Layer)}
+        if layer_type is None:
+            layer_type = Layer
+        if isinstance(layer_type, str):
+            if layer_type not in layer_types:
+                raise ValueError(f"Unknown droppable layer type: {layer_type}")
+            layer_type = layer_types[layer_type]
+        excluded_layer_types: List[Type[Layer]] = []
+        if "layer_type" in excluding:
+            exclude_layer_type = excluding["layer_type"]
+            if isinstance(exclude_layer_type, str):
+                exclude_layer_type = [exclude_layer_type]
+            excluded_layer_types = [layer_types[t] for t in exclude_layer_type]
+        excluded_layer_ids: List[int] = []
+        if "layer_id" in excluding:
+            exclude_layer_id = excluding["layer_id"]
+            if isinstance(exclude_layer_id, int):
+                excluded_layer_ids = [exclude_layer_id]
+            else:
+                excluded_layer_ids = exclude_layer_id
+        for i, layer in enumerate(self.layers):
+            if (
+                not isinstance(layer, layer_type)
+                or any(isinstance(layer, t) for t in excluded_layer_types)
+                or i in excluded_layer_ids
+            ):
+                continue
+            strategy(i)
+        return self
+
     def drop_layer(
         self, layer_id: int, layer_type: Optional[Union[str, Type[Droppable]]] = None
     ):
@@ -85,17 +127,40 @@ class DNN:
         logger.debug("Dropping layer: %d", layer_id)
         if layer_type is None:
             layer_type = Droppable
-        elif isinstance(layer_type, str):
+        if isinstance(layer_type, str):
             layer_types = {t.__name__: t for t in get_subclasses(Droppable)}
             if layer_type not in layer_types:
-                raise ValueError("Unknown layer type: %s" % layer_type)
+                raise ValueError(f"Unknown droppable layer type: {layer_type}")
             layer_type = layer_types[layer_type]
+        elif not issubclass(layer_type, Droppable):
+            raise ValueError(f"Layer type {layer_type.__name__} is not droppable.")
         if layer_id >= self.final_layer_index:
             raise R4VError("Cannot remove final layer.")
         layer = self.layers[layer_id]
         if not isinstance(layer, layer_type):
             raise R4VError(f"Layer {layer} is not of type {layer_type.__name__}")
         layer.drop()
+        self.update_layer_shapes()
+        return self
+
+    def linearize(
+        self, layer_id, layer_type: Optional[Union[str, Type[Linearizable]]] = None
+    ):
+        logger = logging.getLogger(__name__)
+        logger.debug("Linearizing layer: %d", layer_id)
+        if layer_type is None:
+            layer_type = Linearizable
+        if isinstance(layer_type, str):
+            layer_types = {t.__name__: t for t in get_subclasses(Linearizable)}
+            if layer_type not in layer_types:
+                raise ValueError(f"Unknown linearizable layer type: {layer_type}")
+            layer_type = layer_types[layer_type]
+        elif not issubclass(layer_type, Linearizable):
+            raise ValueError(f"Layer type {layer_type.__name__} is not linearizable.")
+        layer = self.layers[layer_id]
+        if not isinstance(layer, layer_type):
+            raise R4VError(f"Layer {layer} is not of type {layer_type.__name__}")
+        layer.linearize()
         self.update_layer_shapes()
         return self
 

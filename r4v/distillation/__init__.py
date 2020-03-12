@@ -178,7 +178,7 @@ def precompute_cache(dnn, train_loader, val_loader, config, device="cpu"):
 
 def distill(config: DistillationConfiguration) -> None:
     logger = logging.getLogger(__name__)
-    
+
     device = get_device(config)
     logger.info("Using device: %s", device)
 

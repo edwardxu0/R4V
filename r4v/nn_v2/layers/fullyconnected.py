@@ -52,8 +52,9 @@ class FullyConnected(Droppable, Scalable):
             assert isinstance(op.c, np.ndarray)
             assert op.alpha == op.beta == 1.0
             assert not op.transpose_a
-            assert not op.transpose_b
-            weights = op.b.T
+            weights = op.b
+            if op.transpose_b:
+                weights = weights.T
             bias = op.c
         elif isinstance(op, Add):
             raise NotImplementedError()
@@ -73,7 +74,7 @@ class FullyConnected(Droppable, Scalable):
         if maintain_weights and self.modified:
             raise ValueError("Cannot maintain weights of modified layer.")
         elif maintain_weights:
-            layer.weight.data = torch.from_numpy(self.weights)
+            layer.weight.data = torch.from_numpy(self.weights.T)
             layer.bias.data = torch.from_numpy(self.bias)
 
         if self.activation == "relu":

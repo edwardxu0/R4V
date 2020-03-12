@@ -4,12 +4,13 @@ from dnnv.nn.graph import OperationGraph
 from dnnv.nn.operations import Flatten as FlattenOp
 from dnnv.nn.operations import Input as InputOp
 from dnnv.nn.operations import Operation
+from dnnv.nn.operations import Reshape as ReshapeOp
 from dnnv.nn.operations import Transpose as TransposeOp
 from typing import Optional, Tuple
 
 from .base import Layer
 from .utils import single
-from ..pytorch import PytorchFlatten, PytorchTranspose
+from ..pytorch import PytorchFlatten, PytorchReshape, PytorchTranspose
 
 
 class Flatten(Layer):
@@ -55,6 +56,40 @@ class Input(Layer):
         output_shape = op_graph.output_shape
         assert len(output_shape) == 1
         return cls(input_shape[0], output_shape[0])
+
+
+class Reshape(Layer):
+    OP_PATTERN = ReshapeOp
+
+    def __init__(
+        self,
+        input_shape: Tuple[int, ...],
+        output_shape: Tuple[int, ...],
+        shape: Tuple[int, ...],
+    ):
+        super().__init__(input_shape, output_shape)
+        self.shape = shape
+
+    def __repr__(self):
+        shape_s = ", ".join(str(d) for d in self.shape)
+        return f"Reshape({shape_s})"
+
+    @classmethod
+    def from_operation_graph(cls, op_graph: OperationGraph):
+        input_shape = op_graph.input_shape
+        assert len(input_shape) == 1
+        output_shape = op_graph.output_shape
+        assert len(output_shape) == 1
+
+        op: ReshapeOp = single(op_graph.output_operations)
+        shape = op.shape
+        if isinstance(shape, Operation):
+            raise ValueError("Shape for Reshape must be concrete")
+
+        return cls(input_shape[0], output_shape[0], shape)
+
+    def as_pytorch(self, maintain_weights: bool = False) -> nn.Module:
+        return PytorchReshape(*self.shape)
 
 
 class Transpose(Layer):

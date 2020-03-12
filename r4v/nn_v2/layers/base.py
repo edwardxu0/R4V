@@ -151,4 +151,4 @@ class Linearizable(Layer):
         raise NotImplementedError()
 
 
-__all__ = ["Layer", "Droppable", "Scalable", "SizePreserving"]
+__all__ = ["Layer", "Droppable", "Linearizable", "Scalable", "SizePreserving"]
