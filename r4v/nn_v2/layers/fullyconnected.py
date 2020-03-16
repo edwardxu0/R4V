@@ -8,6 +8,8 @@ from typing import Optional, Tuple
 
 from .base import Droppable, Scalable
 from .utils import single
+from ..pytorch import Relu as PytorchRelu, Sequential
+from ...errors import R4VError
 
 
 class FullyConnected(Droppable, Scalable):
@@ -67,6 +69,14 @@ class FullyConnected(Droppable, Scalable):
 
         return cls(input_shape[0], output_shape[0], weights, bias, activation)
 
+    def scale(self, factor: float, attribute=None):
+        assert attribute is None
+        super().scale(factor)
+        new_size = int(self.output_shape[1] * factor)
+        if new_size < 1:
+            raise R4VError("Cannot scale fully connected layers to 0 neurons")
+        self.output_shape = (self.output_shape[0], new_size)
+
     def as_pytorch(self, maintain_weights: bool = False) -> nn.Module:
         in_features = self.input_shape[1]
         out_features = self.output_shape[1]
@@ -78,7 +88,7 @@ class FullyConnected(Droppable, Scalable):
             layer.bias.data = torch.from_numpy(self.bias)
 
         if self.activation == "relu":
-            layer = nn.Sequential(layer, nn.ReLU())
+            layer = Sequential(layer, PytorchRelu())
         elif self.activation is not None:
             raise ValueError(
                 f"Unsupported activation for convolutional layers: {self.activation}"

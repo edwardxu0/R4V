@@ -8,6 +8,7 @@ from typing import Tuple, Union
 
 from .base import Droppable
 from .utils import single
+from ..pytorch import Sequential
 
 
 class MaxPool(Droppable):
@@ -55,7 +56,7 @@ class MaxPool(Droppable):
 
         pad_layer = nn.ZeroPad2d((pad_left, pad_right, pad_top, pad_bottom))
         pool_layer = nn.MaxPool2d(self.kernel_shape, self.strides)
-        return nn.Sequential(pad_layer, pool_layer)
+        return Sequential(pad_layer, pool_layer)
 
 
 __all__ = ["MaxPool"]

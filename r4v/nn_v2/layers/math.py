@@ -10,7 +10,7 @@ from typing import Tuple
 
 from .base import Layer, SizePreserving
 from .utils import single
-from ..pytorch import PytorchAtan, PytorchMultiply
+from ..pytorch import Atan as PytorchAtan, Multiply as PytorchMultiply
 
 
 class Atan(SizePreserving):

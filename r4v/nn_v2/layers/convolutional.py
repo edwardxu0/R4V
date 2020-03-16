@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 
 from .base import Droppable, Scalable
 from .utils import single
+from ..pytorch import Relu as PytorchRelu, Sequential
 
 
 class Convolutional(Droppable, Scalable):
@@ -98,12 +99,12 @@ class Convolutional(Droppable, Scalable):
             conv_layer.bias.data = torch.from_numpy(self.bias)
 
         if self.activation == "relu":
-            return nn.Sequential(pad_layer, conv_layer, nn.ReLU())
+            return Sequential(pad_layer, conv_layer, PytorchRelu())
         elif self.activation is not None:
             raise ValueError(
                 f"Unsupported activation for convolutional layers: {self.activation}"
             )
-        return nn.Sequential(pad_layer, conv_layer)
+        return Sequential(pad_layer, conv_layer)
 
 
 __all__ = ["Convolutional"]

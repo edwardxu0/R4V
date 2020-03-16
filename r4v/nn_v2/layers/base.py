@@ -126,9 +126,8 @@ class Droppable(Layer):
 class Scalable(Layer):
     OP_PATTERN = NotImplemented
 
-    @abstractmethod
-    def scale(self, factor, attribute=None):
-        raise NotImplementedError()
+    def scale(self, factor: float, attribute=None):
+        self.modified = True
 
 
 class SizePreserving(Layer):
@@ -148,7 +147,7 @@ class Linearizable(Layer):
 
     @abstractmethod
     def linearize(self):
-        raise NotImplementedError()
+        self.modified = True
 
 
 __all__ = ["Layer", "Droppable", "Linearizable", "Scalable", "SizePreserving"]

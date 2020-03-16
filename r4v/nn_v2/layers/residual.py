@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 from .base import Droppable, Linearizable
 from .convolutional import Convolutional
 from .utils import single
-from ..pytorch import PytorchMultipath
+from ..pytorch import MultiPath, Relu as PytorchRelu, Sequential
 
 
 class TestResidual(Droppable, Linearizable):
@@ -73,11 +73,13 @@ class TestResidual(Droppable, Linearizable):
         super().update_shape(input_shape)
 
     def linearize(self):
+        super().linearize()
         self.linear = True
 
     def as_pytorch(self, maintain_weights: bool = False) -> nn.Module:
+        layer: nn.Module
         if not self.linear:
-            layer = PytorchMultipath(
+            layer = MultiPath(
                 [
                     self.conv1.as_pytorch(maintain_weights=maintain_weights),
                     self.conv2.as_pytorch(maintain_weights=maintain_weights),
@@ -86,11 +88,12 @@ class TestResidual(Droppable, Linearizable):
                 agg="sum",
             )
         else:
-            layer = PytorchMultipath(
-                [self.conv1.as_pytorch(maintain_weights=maintain_weights)], agg="sum"
+            layer = Sequential(
+                self.conv1.as_pytorch(maintain_weights=maintain_weights),
+                self.conv2.as_pytorch(maintain_weights=maintain_weights),
             )
         if self.activation == "relu":
-            return nn.Sequential(layer, nn.ReLU())
+            return Sequential(layer, PytorchRelu())
         elif self.activation is not None:
             raise ValueError(
                 f"Unsupported activation for convolutional layers: {self.activation}"

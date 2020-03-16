@@ -88,6 +88,12 @@ def get_loss_function(loss, params):
     elif loss == "mse":
         criterion = torch.nn.MSELoss(reduction="sum")
         return lambda ty, sy, y=None: criterion(sy, ty)
+    elif loss == "softmax_mse":
+
+        def loss_fn(ty, sy, y):
+            return F.mse_loss(torch.softmax(sy, dim=-1), torch.softmax(ty, dim=-1))
+
+        return loss_fn
     elif loss == "balanced_mse":
         window_size = params.get("window_size", 10000)
         epsilon = params.get("epsilon", 1e-6)
@@ -109,7 +115,7 @@ def get_loss_function(loss, params):
                 self.window = torch.cat([self.window, ty])[-self.window_size :]
                 if len(self.window) == 1:
                     mean = self.window[0]
-                    std = self.window[0]
+                    std = self.window[0]  # should this be 0?
                 else:
                     mean = self.window.mean(dim=0)
                     std = self.window.std(dim=0)
@@ -232,12 +238,6 @@ def distill(config: DistillationConfiguration) -> None:
     best_val_error = float("inf")
     while iteration < num_epochs:
         iteration += 1
-        logger.info(
-            "Epoch %d (best epoch = %d, error = %.6f)",
-            iteration,
-            best_epoch,
-            best_val_error,
-        )
         train(
             teacher,
             student,
@@ -246,24 +246,24 @@ def distill(config: DistillationConfiguration) -> None:
             optimizer,
             device,
             prediction_type,
-            config.data.train,
+            config,
         )
         if config.get("save_intermediate", False):
             student.export_onnx(student_path_template % iteration)
         if not config.get("novalidation", False):
             error = validate(
-                teacher,
-                student,
-                val_loader,
-                loss_fn,
-                device,
-                prediction_type,
-                config.data.validation,
+                teacher, student, val_loader, loss_fn, device, prediction_type, config
             )
             if error["relative"] < best_val_error:
                 best_val_error = error["relative"]
                 best_epoch = iteration
                 student.export_onnx(student_path)
+            logger.info(
+                "Epoch %d (best epoch = %d, error = %.6f)",
+                iteration,
+                best_epoch,
+                best_val_error,
+            )
             if error["relative"] < config.get("threshold", float("-inf")):
                 break
     if config.get("novalidation", False):
@@ -283,12 +283,24 @@ def transform_network(network, config):
     return network
 
 
+ALPHA = None
+
+
 def train(
     teacher, student, data_loader, loss_fn, optimizer, device, prediction_type, config
 ):
+    global ALPHA
     logger = logging.getLogger(__name__)
+
+    if ALPHA is None:
+        # ALPHA = -config.parameters.get("epochs", 100) // 2
+        ALPHA = -20
+    ALPHA = ALPHA + 1
+    logger.info("ALPHA: %d", ALPHA)
+
     total_loss = 0.0
     example_count = 0.0
+    _ = student.relu_loss()  # this resets the relu loss # TODO : make more general
     for i, (idx, t_x, s_x, y) in enumerate(data_loader):
         s_x = s_x.to(device)
         y = y.to(device)
@@ -297,6 +309,17 @@ def train(
         optimizer.zero_grad()
         student_y = student(s_x)
         loss = loss_fn(teacher_y, student_y, y)
+        relu_loss = student.relu_loss()
+        print(f"{loss.item():10.5f} {relu_loss.item():10.5f}")
+        if config.get("use_relu_loss", False):
+            weighted_relu_loss = (
+                relu_loss
+                * min(max(0, ALPHA), 1)
+                * config.get("relu_alpha", 100000)
+            )
+            # weighted_relu_loss = relu_loss * np.exp(ALPHA)
+            logger.info("weighted relu loss: %f", weighted_relu_loss)
+            loss = loss + weighted_relu_loss
         loss.backward()
         optimizer.step()
         total_loss += loss.item()

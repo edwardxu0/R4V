@@ -5,6 +5,7 @@ from dnnv.nn.operations import Identity as IdentityOp
 from dnnv.nn.operations import Relu as ReluOp
 
 from .base import SizePreserving
+from ..pytorch import Relu as PytorchRelu
 
 
 class Activation(SizePreserving):
@@ -34,7 +35,7 @@ class Relu(Activation):
         return "Relu()"
 
     def as_pytorch(self, maintain_weights: bool = False) -> nn.Module:
-        return nn.ReLU()
+        return PytorchRelu()
 
 
 __all__ = ["Identity", "Relu"]

@@ -1,3 +1,4 @@
+import numpy as np
 import torch.nn as nn
 
 from dnnv.nn.graph import OperationGraph
@@ -10,7 +11,11 @@ from typing import Optional, Tuple
 
 from .base import Layer
 from .utils import single
-from ..pytorch import PytorchFlatten, PytorchReshape, PytorchTranspose
+from ..pytorch import (
+    Flatten as PytorchFlatten,
+    Reshape as PytorchReshape,
+    Transpose as PytorchTranspose,
+)
 
 
 class Flatten(Layer):
@@ -86,6 +91,14 @@ class Reshape(Layer):
         if isinstance(shape, Operation):
             raise ValueError("Shape for Reshape must be concrete")
 
+        # Check if this is should actually be a flatten operation
+        if (
+            len(shape) == 2
+            and shape[1] == np.product(input_shape[0][1:])
+            and (shape[0] == -1 or shape[0] == input_shape[0][0])
+        ):
+            return Flatten(input_shape[0], output_shape[0], axis=1)
+
         return cls(input_shape[0], output_shape[0], shape)
 
     def as_pytorch(self, maintain_weights: bool = False) -> nn.Module:
@@ -123,7 +136,7 @@ class Transpose(Layer):
         return cls(input_shape[0], output_shape[0], tuple(perm))
 
     def as_pytorch(self, maintain_weights: bool = False) -> nn.Module:
-        return PytorchTranspose(self.permutation)
+        return PytorchTranspose(*self.permutation)
 
 
 __all__ = ["Flatten", "Input", "Transpose"]

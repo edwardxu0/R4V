@@ -8,7 +8,24 @@ from typing import Callable, Iterable, List, Optional
 from .. import logging
 
 
-class PytorchReshape(nn.Module):
+class Relu(nn.ModuleList):
+    value = []
+
+    def forward(self, x):
+        if x.requires_grad and x.device != torch.device("cpu"):
+            # flat_x = x.flatten()
+            # perm = torch.randperm(flat_x.size(0))
+            # k = flat_x.size(0) // 10
+            # idx = perm[:k]
+            # samples = flat_x[idx]
+            # self.__class__.value.append(torch.exp(-(samples ** 2)).mean())
+            # self.__class__.value.append(torch.exp(-(x ** 2)).mean())
+            self.__class__.value.append(torch.exp(-torch.abs(x)).mean())
+            # self.__class__.value += torch.exp(-(x ** 2)).mean()
+        return F.relu(x)
+
+
+class Reshape(nn.Module):
     def __init__(self, *shape: int):
         super().__init__()
         self.shape = shape
@@ -17,7 +34,7 @@ class PytorchReshape(nn.Module):
         return x.reshape(*self.shape)
 
 
-class PytorchFlatten(nn.Module):
+class Flatten(nn.Module):
     def __init__(self, axis: int):
         super().__init__()
         self.axis = axis
@@ -29,7 +46,7 @@ class PytorchFlatten(nn.Module):
         return x.reshape(*new_shape)
 
 
-class PytorchTranspose(nn.Module):
+class Transpose(nn.Module):
     def __init__(self, *dims: int):
         super().__init__()
         self.dims = dims
@@ -38,12 +55,12 @@ class PytorchTranspose(nn.Module):
         return x.permute(*self.dims)
 
 
-class PytorchAtan(nn.Module):
+class Atan(nn.Module):
     def forward(self, x):
         return torch.atan(x)
 
 
-class PytorchMultiply(nn.Module):
+class Multiply(nn.Module):
     def __init__(self, value):
         super().__init__()
         self.register_buffer("value", torch.from_numpy(value))
@@ -52,7 +69,7 @@ class PytorchMultiply(nn.Module):
         return x * self.value
 
 
-class PytorchMultipath(nn.Module):
+class MultiPath(nn.Module):
     def __init__(self, *paths: List[nn.Module], agg: str = None):
         super().__init__()
         self.agg = agg
@@ -72,4 +89,16 @@ class PytorchMultipath(nn.Module):
         elif self.agg == "sum":
             return sum(ys)
         raise ValueError(f"Unsupported aggregation operation: {self.agg}")
+
+
+class Sequential(nn.Module):
+    def __init__(self, *path: nn.Module):
+        super().__init__()
+        self.path = nn.ModuleList(path)
+
+    def forward(self, x):
+        y = x
+        for operation in self.path:
+            y = operation(y)
+        return y
 

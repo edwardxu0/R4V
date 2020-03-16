@@ -22,6 +22,7 @@ LayerExclusions = TypedDict(
 
 
 def load_network(config: Configuration):
+    logger = logging.getLogger(__name__)
     op_graph = parse(Path(config["model"])).simplify()
     if config.get("input_format", "NCHW") == "NHWC":
         op_graph = op_graph[2:]  # TODO : Double check this. Make more robust
@@ -35,6 +36,8 @@ def load_network(config: Configuration):
         op_graph = layer_match.input_op_graph
     if len(op_graph.output_operations) > 0:
         raise NetworkParseError("Unsupported computation graph detected")
+    for layer in layers:
+        logger.debug(layer)
     return DNN(layers)
 
 
@@ -164,6 +167,32 @@ class DNN:
         self.update_layer_shapes()
         return self
 
+    def scale_layer(
+        self,
+        layer_id: int,
+        factor: float,
+        layer_type: Optional[Union[str, Type[Scalable]]] = None,
+    ):
+        logger = logging.getLogger(__name__)
+        logger.debug("Scaling layer (factor %f): %d", factor, layer_id)
+        if layer_type is None:
+            layer_type = Scalable
+        if isinstance(layer_type, str):
+            layer_types = {t.__name__: t for t in get_subclasses(Scalable)}
+            if layer_type not in layer_types:
+                raise ValueError(f"Unknown scalable layer type: {layer_type}")
+            layer_type = layer_types[layer_type]
+        elif not issubclass(layer_type, Scalable):
+            raise ValueError(f"Layer type {layer_type.__name__} is not scalable.")
+        if layer_id >= self.final_layer_index:
+            raise R4VError("Cannot scale final layer.")
+        layer = self.layers[layer_id]
+        if not isinstance(layer, layer_type):
+            raise R4VError(f"Layer {layer} is not of type {layer_type.__name__}")
+        layer.scale(factor)
+        self.update_layer_shapes()
+        return self
+
 
 class Net(nn.Module):
     def __init__(self, layers, input_shape):
@@ -191,3 +220,13 @@ class Net(nn.Module):
     def export_onnx(self, path):
         dummy_input = torch.ones(self.input_shape).to(next(self.parameters()).device)
         torch.onnx.export(self, dummy_input, path)
+
+    def relu_loss(self):
+        from .pytorch import Relu
+
+        if len(Relu.value) == 0:
+            return 0
+        loss = sum(Relu.value) / len(Relu.value)
+        Relu.value = []
+
+        return loss
