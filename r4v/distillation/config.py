@@ -5,6 +5,7 @@ from functools import partial
 from .. import logging
 from ..config import parse, Configuration
 from ..distillation import strategies as distillation_strategies
+from . import optimization
 
 
 class DistillationConfiguration(Configuration):
@@ -40,6 +41,15 @@ class DistillationConfiguration(Configuration):
     def parameters(self):
         parameters = self.config.get("parameters", {})
         return parameters
+
+    @property
+    def extra_loss(self):
+        if "extra_losses" not in self._cache:
+            extra_losses = []
+            for extra_loss in self.config.get("extra_loss", []):
+                extra_losses.append(optimization.build_loss(extra_loss))
+            self._cache["extra_losses"] = extra_losses
+        return self._cache["extra_losses"]
 
 
 class DataConfiguration(Configuration):
@@ -141,4 +151,3 @@ class DataConfiguration(Configuration):
             data_config["_STAGE"] = "validation"
             return DataConfiguration(data_config)
         raise ValueError("No validation configuration defined")
-

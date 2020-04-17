@@ -39,19 +39,17 @@ class DronetOutput(Rescalable):
             self.concat_axis,
         )
 
-    @Layer.inputs.setter
-    def inputs(self, value):
+    def _set_inputs(self, value):
         self.fc1.inputs = value
         self.fc2.inputs = value
-        Layer.inputs.fset(self, value)
+        Layer._set_inputs(self, value)
 
-    @Layer.input_shape.setter
-    def input_shape(self, value):
+    def _set_input_shape(self, value):
         assert value[0] == 1
         self.fc1.input_shape = value
         self.fc2.input_shape = value
         self._output_shape = (1, self.fc1.output_shape[1] + self.fc2.output_shape[1])
-        Layer.input_shape.fset(self, value)
+        Layer._set_input_shape(self, value)
 
     def scale(self, factor):
         self.fc1.scale(factor)
@@ -160,8 +158,7 @@ class DronetResidualBlock(ResidualConnection, Droppable, DroppableOperations):
             f")"
         )
 
-    @Layer.inputs.setter
-    def inputs(self, value):
+    def _set_inputs(self, value):
         if not isinstance(value, list):
             value = [value]
         if self.downsample and self.use_residual:
@@ -171,12 +168,11 @@ class DronetResidualBlock(ResidualConnection, Droppable, DroppableOperations):
                 assert self.downsample.dropped
                 return
             self.downsample.input_shape = self.downsample._inputs[0].output_shape
-        Layer.inputs.fset(self, value)
+        Layer._set_inputs(self, value)
 
-    @Layer.input_shape.setter
-    def input_shape(self, value):
+    def _set_input_shape(self, value):
         self.in_features[0] = value[1]
-        Layer.input_shape.fset(self, value)
+        Layer._set_input_shape(self, value)
         if (
             self.use_residual
             and not self.downsample

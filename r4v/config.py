@@ -29,6 +29,7 @@ class Configuration:
 
     def __init__(self, config):
         self.config = config
+        self._cache = {}
         if "plugins" in self.config:
             for plugin in self.config["plugins"]:
                 if plugin["name"] not in self.__class__.PLUGINS:
@@ -39,10 +40,19 @@ class Configuration:
                     spec.loader.exec_module(mod)
                     self.__class__.PLUGINS[plugin["name"]] = mod
 
+    def __getattr__(self, name):
+        if name in self.config:
+            return self.config[name]
+        return object.__getattribute__(self, name)
+
     def __getitem__(self, name):
+        if hasattr(self, name):
+            return getattr(self, name)
         return self.config[name]
 
     def get(self, name, default=None):
+        if hasattr(self, name):
+            return getattr(self, name)
         return self.config.get(name, default)
 
     @property

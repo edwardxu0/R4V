@@ -218,15 +218,75 @@ class Net(nn.Module):
         return y
 
     def export_onnx(self, path):
-        dummy_input = torch.ones(self.input_shape).to(next(self.parameters()).device)
-        torch.onnx.export(self, dummy_input, path)
+        with torch.no_grad():
+            dummy_input = torch.ones(self.input_shape).to(
+                next(self.parameters()).device
+            )
+            torch.onnx.export(self, dummy_input, path)
 
-    def relu_loss(self):
+    def relu_loss(self, config):
+        from .pytorch import Relu
+
+        print(config)
+        print(config.input_region_path)
+        print(config["input_region_path"])
+        exit()
+
+        pre_relu_values = torch.zeros(x.size(0))
+
+        orig_relu_forward = Relu.forward
+
+        def relu_forward(self, x):
+            pre_relu_values = torch.min(
+                pre_relu_values, torch.abs(x).flatten().min()[0]
+            )
+            return orig_relu_forward(self, x)
+
+        Relu.forward = relu_forward
+        # TODO : do multiple passes of random samples
+        # forward pass on center, then a random sample
+        # high loss if sample has different sign then center
+        # high loss if sample is far from center
+        _ = self(x)
+        return torch.exp(-pre_relu_values).sum()
+
+    def relu_loss_(self):
         from .pytorch import Relu
 
         if len(Relu.value) == 0:
             return 0
-        loss = sum(Relu.value) / len(Relu.value)
+
+        def weights(intermediate_loss_values):
+            import os
+
+            n = len(intermediate_loss_values)
+            method = os.getenv("R4V_RELULOSS_REDUCTION", "max").lower()
+            if method == "max":
+                i_ = np.argmax(intermediate_loss_values)
+                for i in range(n):
+                    if i == i_:
+                        yield 1.0
+                    else:
+                        yield 0.0
+            elif method == "mean":
+                for i in range(n):
+                    yield i / n
+            elif method == "sum":
+                for i in range(n):
+                    yield 1.0
+            elif method.startswith("explicit="):
+                W = [float(w) for w in method.split("=")[1].split(",")]
+                assert len(W) == n
+                for w in W:
+                    yield w
+            else:
+                raise ValueError(f"Unknown reduction method: {method}.")
+
+        loss = 0
+        for w, v in zip(
+            weights(Relu.intermediate_loss_values), Relu.intermediate_loss_values
+        ):
+            loss = loss + w * v
         Relu.value = []
 
         return loss

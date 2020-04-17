@@ -283,82 +283,87 @@ def transform_network(network, config):
     return network
 
 
-def check_finite(total_loss, student_y, teacher_y):
-    logger = logging.getLogger(__name__)
-    if np.isnan(total_loss):
-        logger.error(
-            "Loss is `nan`! Outputs: "
-            "student=%s (student contains `nan`=%s), "
-            "teacher=%s (teacher contains `nan`=%s), target=%s",
-            student_y,
-            bool(torch.isnan(student_y).any()),
-            teacher_y,
-            bool(torch.isnan(teacher_y).any()),
-            y,
-        )
-        raise DistillationError("Loss is `nan`!")
-    if np.isinf(total_loss):
-        logger.error(
-            "Loss is infinite! Outputs: "
-            "student=%s (student contains `nan`=%s), "
-            "teacher=%s (teacher contains `nan`=%s), target=%s",
-            student_y,
-            bool(torch.isinf(student_y).any()),
-            teacher_y,
-            bool(torch.isinf(teacher_y).any()),
-            y,
-        )
-        raise DistillationError("Loss is infinite!")
-
-
-def write_loss_log(i, data_loader, loss, total_loss, num_samples, total_num_samples):
-    logger = logging.getLogger(__name__)
-    if (i + 1) % 25 == 0:
-        logger.info(
-            "(%7d / %7d): %.6f %.6f",
-            (i + 1) * data_loader.batch_size,
-            len(data_loader.dataset),
-            loss.item() / num_samples,
-            total_loss / total_num_samples,
-        )
-    elif (i + 1) % 1 == 0:
-        logger.debug(
-            "(%7d / %7d): %.6f %.6f",
-            (i + 1) * data_loader.batch_size,
-            len(data_loader.dataset),
-            loss.item() / num_samples,
-            total_loss / total_num_samples,
-        )
+ALPHA = None
 
 
 def train(
     teacher, student, data_loader, loss_fn, optimizer, device, prediction_type, config
 ):
+    global ALPHA
     logger = logging.getLogger(__name__)
+
+    if ALPHA is None:
+        ALPHA = -config.parameters.get("reluloss_alpha", 20)
+    ALPHA = ALPHA + 1
+    logger.info("ALPHA: %d", ALPHA)
+
     total_loss = 0.0
-    total_num_samples = 0.0
+    example_count = 0.0
+    _ = student.relu_loss()  # this resets the relu loss # TODO : make more general
     for i, (idx, t_x, s_x, y) in enumerate(data_loader):
         s_x = s_x.to(device)
         y = y.to(device)
-
         with torch.no_grad():
             teacher_y = teacher(t_x, cache_ids=idx).to(device)
         optimizer.zero_grad()
         student_y = student(s_x)
         loss = loss_fn(teacher_y, student_y, y)
+        relu_loss = student.relu_loss()
+        print(f"{loss.item():10.5f} {relu_loss.item():10.5f}")
+        if config.get("use_reluloss", False):
+            weighted_relu_loss = (
+                relu_loss
+                * min(max(0, ALPHA), 1)
+                * (10 ** int(np.log10(loss.item()) + 1))
+            )
+            # weighted_relu_loss = relu_loss * np.exp(ALPHA)
+            logger.info("weighted relu loss: %f", weighted_relu_loss)
+            loss = loss + weighted_relu_loss
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
-
-        num_samples = float(idx.size(0))
-        total_num_samples += num_samples
-
-        write_loss_log(i, data_loader, loss, total_loss, num_samples, total_num_samples)
-        check_finite(total_loss, student_y, teacher_y)
-
-    for extra_loss in config.extra_loss:
-        extra_loss.step(student, optimizer)
-    logger.info("training loss: %.6f", total_loss / total_num_samples)
+        example_count += float(idx.size(0))
+        if (i + 1) % 25 == 0:
+            logger.info(
+                "(%7d / %7d): %.6f %.6f",
+                (i + 1) * data_loader.batch_size,
+                len(data_loader.dataset),
+                loss.item() / float(idx.size(0)),
+                total_loss / example_count,
+            )
+        elif (i + 1) % 1 == 0:
+            logger.debug(
+                "(%7d / %7d): %.6f %.6f",
+                (i + 1) * data_loader.batch_size,
+                len(data_loader.dataset),
+                loss.item() / float(idx.size(0)),
+                total_loss / example_count,
+            )
+        if np.isnan(total_loss):
+            logger.error(
+                "Loss is `nan`! Outputs: "
+                "student=%s (student contains `nan`=%s), "
+                "teacher=%s (teacher contains `nan`=%s), target=%s",
+                student_y,
+                bool(torch.isnan(student_y).any()),
+                teacher_y,
+                bool(torch.isnan(teacher_y).any()),
+                y,
+            )
+            raise DistillationError("Loss is `nan`!")
+        if np.isinf(total_loss):
+            logger.error(
+                "Loss is infinite! Outputs: "
+                "student=%s (student contains `nan`=%s), "
+                "teacher=%s (teacher contains `nan`=%s), target=%s",
+                student_y,
+                bool(torch.isinf(student_y).any()),
+                teacher_y,
+                bool(torch.isinf(teacher_y).any()),
+                y,
+            )
+            raise DistillationError("Loss is infinite!")
+    logger.info("training loss: %.6f", total_loss / example_count)
 
 
 def validate(teacher, student, data_loader, loss_fn, device, prediction_type, config):
@@ -415,12 +420,6 @@ def validate(teacher, student, data_loader, loss_fn, device, prediction_type, co
                     error["teacher"],
                     error["relative"],
                 )
-        all_losses = [error["relative"]]
-        for extra_loss in config.extra_loss:
-            extra_loss_value = extra_loss.compute_val_loss(student).item()
-            logger.info("%s: %f", extra_loss.__class__.__name__, extra_loss_value)
-            all_losses.append(extra_loss_value)
-        logger.info("Aggregate loss: %f", np.product(all_losses))
     logger.info(
         "validation error: student=%.6f, teacher=%.6f, relative=%.6f",
         error["student"],

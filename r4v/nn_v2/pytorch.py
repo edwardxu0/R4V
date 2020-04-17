@@ -9,19 +9,7 @@ from .. import logging
 
 
 class Relu(nn.ModuleList):
-    value = []
-
     def forward(self, x):
-        if x.requires_grad and x.device != torch.device("cpu"):
-            # flat_x = x.flatten()
-            # perm = torch.randperm(flat_x.size(0))
-            # k = flat_x.size(0) // 10
-            # idx = perm[:k]
-            # samples = flat_x[idx]
-            # self.__class__.value.append(torch.exp(-(samples ** 2)).mean())
-            # self.__class__.value.append(torch.exp(-(x ** 2)).mean())
-            self.__class__.value.append(torch.exp(-torch.abs(x)).mean())
-            # self.__class__.value += torch.exp(-(x ** 2)).mean()
         return F.relu(x)
 
 
@@ -101,4 +89,3 @@ class Sequential(nn.Module):
         for operation in self.path:
             y = operation(y)
         return y
-
