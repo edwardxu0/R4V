@@ -4,6 +4,7 @@ import copy
 import logging
 import multiprocessing as mp
 import numpy as np
+import sys
 
 logger = logging.getLogger()
 logger.setLevel(logging.ERROR)
@@ -116,6 +117,14 @@ def get_neuron_counts():
 
 
 def main():
+    config_dir = Path("tmp/scenario.3/dave")
+    if len(sys.argv) > 1:
+        config_dir = Path(sys.argv[1])
+    if not config_dir.exists():
+        config_dir.mkdir(parents=True)
+    else:
+        print("Config directory already exist.")
+        return
     neuron_count_limit = (
         load_network(
             {
@@ -159,10 +168,15 @@ def main():
         np.mean(neuron_counts),
         np.median(neuron_counts),
     )
+    neuron_count_limit = 20000  # TODO: PARAMETER
     min_neuron_count = np.min(neuron_counts)
-    nbins = 10
+    nbins = 20  # TODO: PARAMETER
     bin_width = (neuron_count_limit - min_neuron_count) / nbins
-    bin_limits = [min_neuron_count + bin_width * i for i in range(nbins + 1)]
+    # bin_limits = [min_neuron_count + bin_width * i for i in range(nbins + 1)]
+    neuron_counts = [c for c in neuron_counts if c < neuron_count_limit]
+    bin_limits = np.percentile(
+        neuron_counts, [(i * 100.0 / nbins) for i in range(nbins + 1)]
+    )
     bins = [[] for _ in range(nbins)]
     for transform, num_neurons in sorted(configs.items(), key=lambda kv: kv[1]):
         for i, (bin_min, bin_max) in enumerate(zip(bin_limits, bin_limits[1:])):
@@ -171,9 +185,11 @@ def main():
     for i, b in enumerate(bins):
         print(i, (bin_limits[i], bin_limits[i + 1]), len(b))
     print()
+
+    nselect = 20  # TODO: PARAMETER
     selected = set()
     count = 0
-    while len(selected) < 20:
+    while len(selected) < nselect:
         count += 1
         for i, b in enumerate(bins):
             if len(b) < count:
@@ -184,9 +200,7 @@ def main():
                 if c not in selected:
                     break
             selected.add(c)
-            print(len(selected), (bin_limits[i], bin_limits[i + 1]), c)
-    config_dir = Path("configs/scenario.3/dave.tse.sample")
-    config_dir.mkdir(exist_ok=True, parents=True)
+            print(len(selected), (bin_limits[i], bin_limits[i + 1]), c, configs[c])
     for transform in selected:
         drop_layers, scale_layers_1, scale_layers_2 = transform
         filename = config_dir / (
