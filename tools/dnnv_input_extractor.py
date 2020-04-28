@@ -16,10 +16,10 @@ def _parse_args():
     )
     parser.add_argument("properties", nargs="+", type=Path)
     parser.add_argument("-o", "--output_path", type=Path, required=True)
-    return parser.parse_args()
+    return parser.parse_known_args()
 
 
-def main(args):
+def main(args, extra_args):
     def mock_network(x):
         return np.zeros((1, 10))
 
@@ -29,7 +29,7 @@ def main(args):
 
     input_preconditions = []
     for property_path in args.properties:
-        prop = parse_property(property_path)
+        prop = parse_property(property_path, extra_args)
         prop.concretize(**{"N": mock_network})
         for constraints in ConvexPolytopeExtractor().extract_from(prop):
             new_precondition = constraints.input_constraint.as_hyperrectangle()
@@ -44,7 +44,9 @@ def main(args):
                 )
     print(len(input_preconditions))
     np.save(args.output_path, input_preconditions)
+    if extra_args:
+        print("Unused args:", extra_args)
 
 
 if __name__ == "__main__":
-    main(_parse_args())
+    main(*_parse_args())
