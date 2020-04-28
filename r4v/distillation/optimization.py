@@ -9,21 +9,21 @@ class Loss:
     def __init__(self, config):
         self.config = config
 
-    def step(self, model, optimizer):
+    def step(self, model, optimizer, device="cpu"):
         logger = logging.getLogger(__name__)
         if self.config.get("validation_only", False):
             return
         for i in range(self.config.get("iterations", 1)):
             optimizer.zero_grad()
-            loss = self.compute_loss(model)
+            loss = self.compute_loss(model, device=device)
             loss.backward()
             optimizer.step()
         logger.info("%s: %f", self.__class__.__name__, loss.item())
 
-    def compute_loss(self, model):
+    def compute_loss(self, model, device="cpu"):
         raise NotImplementedError()
 
-    def compute_val_loss(self, model):
+    def compute_val_loss(self, model, device="cpu"):
         raise NotImplementedError()
 
 
@@ -41,7 +41,7 @@ class ReluLoss(Loss):
     def _loss(self, model, x):
         from ..nn_v2.pytorch import Relu
 
-        Relu.pre_relu_values = torch.zeros(x.size(0)) + float("inf")
+        Relu.pre_relu_values = torch.zeros(x.size(0), device=x.device) + float("inf")
 
         orig_relu_forward = Relu.forward
 
@@ -60,15 +60,15 @@ class ReluLoss(Loss):
         Relu.forward = orig_relu_forward
         return torch.exp(-Relu.pre_relu_values).sum()
 
-    def compute_loss(self, model):
-        x = self.sample_input_region()
+    def compute_loss(self, model, device="cpu"):
+        x = self.sample_input_region().to(device)
         return self._loss(model, x)
 
-    def compute_val_loss(self, model):
+    def compute_val_loss(self, model, device="cpu"):
         x_ = []
         for region in self.input_region:
             x_.append((region[0] + region[1]) / 2)
-        x = torch.from_numpy(np.concatenate(x_)).float()
+        x = torch.from_numpy(np.concatenate(x_)).float().to(device)
         return self._loss(model, x)
 
 

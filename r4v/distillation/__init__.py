@@ -235,7 +235,7 @@ def distill(config: DistillationConfiguration) -> None:
     optimizer = get_optimizer(optimization_algorithm, student, params)
 
     best_epoch = 0
-    best_val_error = float("inf")
+    best_val_loss = float("inf")
     while iteration < num_epochs:
         iteration += 1
         train(
@@ -254,15 +254,15 @@ def distill(config: DistillationConfiguration) -> None:
             error = validate(
                 teacher, student, val_loader, loss_fn, device, prediction_type, config
             )
-            if error["relative"] < best_val_error:
-                best_val_error = error["relative"]
+            if error["loss"] < best_val_loss:
+                best_val_loss = error["loss"]
                 best_epoch = iteration
                 student.export_onnx(student_path)
             logger.info(
-                "Epoch %d (best epoch = %d, error = %.6f)",
+                "Epoch %d (best epoch = %d, loss = %.6f)",
                 iteration,
                 best_epoch,
-                best_val_error,
+                best_val_loss,
             )
             if error["relative"] < config.get("threshold", float("-inf")):
                 break
@@ -337,28 +337,31 @@ def train(
     logger = logging.getLogger(__name__)
     total_loss = 0.0
     total_num_samples = 0.0
-    for i, (idx, t_x, s_x, y) in enumerate(data_loader):
-        s_x = s_x.to(device)
-        y = y.to(device)
+    if not config.get("skip_error_training", False):
+        for i, (idx, t_x, s_x, y) in enumerate(data_loader):
+            s_x = s_x.to(device)
+            y = y.to(device)
 
-        with torch.no_grad():
-            teacher_y = teacher(t_x, cache_ids=idx).to(device)
-        optimizer.zero_grad()
-        student_y = student(s_x)
-        loss = loss_fn(teacher_y, student_y, y)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
+            with torch.no_grad():
+                teacher_y = teacher(t_x, cache_ids=idx).to(device)
+            optimizer.zero_grad()
+            student_y = student(s_x)
+            loss = loss_fn(teacher_y, student_y, y)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
 
-        num_samples = float(idx.size(0))
-        total_num_samples += num_samples
+            num_samples = float(idx.size(0))
+            total_num_samples += num_samples
 
-        write_loss_log(i, data_loader, loss, total_loss, num_samples, total_num_samples)
-        check_finite(total_loss, student_y, teacher_y)
+            write_loss_log(
+                i, data_loader, loss, total_loss, num_samples, total_num_samples
+            )
+            check_finite(total_loss, student_y, teacher_y)
 
     for extra_loss in config.extra_loss:
-        extra_loss.step(student, optimizer)
-    logger.info("training loss: %.6f", total_loss / total_num_samples)
+        extra_loss.step(student, optimizer, device=device)
+    logger.info("training loss: %.6f", total_loss / (total_num_samples + 1e-16))
 
 
 def validate(teacher, student, data_loader, loss_fn, device, prediction_type, config):
@@ -416,11 +419,15 @@ def validate(teacher, student, data_loader, loss_fn, device, prediction_type, co
                     error["relative"],
                 )
         all_losses = [error["relative"]]
+        logger.info("RelativeError: %f", error["relative"])
         for extra_loss in config.extra_loss:
-            extra_loss_value = extra_loss.compute_val_loss(student).item()
+            extra_loss_value = extra_loss.compute_val_loss(
+                student, device=device
+            ).item()
             logger.info("%s: %f", extra_loss.__class__.__name__, extra_loss_value)
             all_losses.append(extra_loss_value)
-        logger.info("Aggregate loss: %f", np.product(all_losses))
+        error["loss"] = np.product(all_losses)
+        logger.info("Aggregate loss: %f", error["loss"])
     logger.info(
         "validation error: student=%.6f, teacher=%.6f, relative=%.6f",
         error["student"],
