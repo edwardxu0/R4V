@@ -3,13 +3,12 @@
 # print out some debug info
 date
 echo $(hostname)
+echo $CUDA_VISIBLE_DEVICES
 echo "$0 $@"
 
 # move to app directory
 ln -s $(pwd)/scratch/r4v/artifacts r4v/artifacts
 . scratch/.venv/bin/activate
-echo $(python -V)
-echo $(which python)
 cd r4v
 
 # prepare the config file
@@ -32,7 +31,7 @@ echo
 
 # run distillation
 echo "Running distillation..."
-echo "python -m r4v distill $config -v"
-python -m r4v distill $config -v
+echo "python -m r4v distill $config -v --learning-rate=0.01 --epochs=100"
+python -m r4v distill $config -v --learning-rate=0.01 --epochs=100
 
 tar -czf ../$identifier.model.tar.gz tmp

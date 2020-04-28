@@ -229,7 +229,7 @@ def job_stage_data(parent, name: Path, path: Path, is_output=True):
         delete_on_term.text = "true"
         creation_flag.text = "overwrite"
     always_stage_out = ET.SubElement(el, "jsdl:AlwaysStageOut")
-    always_stage_out.text = "false"
+    always_stage_out.text = "true"
     return el
 
 
