@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 if [[ "$1" == "setup" ]]; then
+    shift
     echo "./scripts/lancium_submit.py" \
         "-J \"lanciumSetup\"" \
         "-G rns:/home/CCC/Lancium/dls2fc@virginia.edu/foo" \
@@ -20,15 +21,17 @@ if [[ "$1" == "setup" ]]; then
         --error "setup.err" \
         --output "setup.out" \
         --time 12:00:00 \
-        --mem 16G \
+        --mem 32G \
         /nfs/software/wrappers/py36-gcc-wrapper \
-        ./r4v/scripts/lancium_setup.sh
+        ./r4v/scripts/lancium_setup.sh $@
 elif [[ "$1" == "distill" ]]; then
     shift
     configdir=${1%/}
     shift
+    numtimes=$1
+    shift
 
-    for i in 1 2 3 4 5; do
+    for ((i = 0; i < $numtimes; i++)); do
         for config in $configdir/*; do
             count=$(($count + 1))
 
@@ -54,7 +57,7 @@ elif [[ "$1" == "distill" ]]; then
                 --error "$uuid.err" \
                 --output "$uuid.out" \
                 --time 12:00:00 \
-                --mem 8G \
+                --mem 32G \
                 /nfs/software/wrappers/py36-gcc-wrapper \
                 ./r4v/scripts/lancium_run.sh "$config" "$uuid"
         done

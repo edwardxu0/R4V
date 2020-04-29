@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
-configdir=${1%/}; shift
-logdir=${1%/}; shift
+configdir=${1%/}
+shift
+logdir=${1%/}
+shift
 
 for config in $configdir/*; do
     uuid="$(python -c "import uuid; print(str(uuid.uuid4()).lower())")"

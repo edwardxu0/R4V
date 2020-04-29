@@ -20,9 +20,9 @@ echo $config_name
 mkdir -p tmp/$config_name/$identifier
 config=tmp/$config_name/$identifier/config.toml
 echo $config
-cat $1 > $config
-echo "[distillation.student]" >> $config
-echo "path=\"tmp/$config_name/$identifier/model.onnx\"" >> $config
+cat $1 >$config
+echo "[distillation.student]" >>$config
+echo "path=\"tmp/$config_name/$identifier/model.onnx\"" >>$config
 
 echo
 
