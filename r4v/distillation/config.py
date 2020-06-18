@@ -5,7 +5,6 @@ from functools import partial
 from .. import logging
 from ..config import parse, Configuration
 from ..distillation import strategies as distillation_strategies
-from . import hooks
 from . import optimization
 
 

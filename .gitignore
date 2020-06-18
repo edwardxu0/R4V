@@ -115,5 +115,4 @@ tmp/
 r4v.tar.gz
 results*
 /properties*
-**/data/*
 **/tmp/*

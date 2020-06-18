@@ -1,0 +1,8 @@
+format = "mnist"
+batchsize = 1000
+
+[teacher]
+path = "tmp/artifacts/mnist"
+
+[student]
+path = "tmp/artifacts/mnist"
