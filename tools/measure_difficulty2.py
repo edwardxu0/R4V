@@ -9,8 +9,8 @@ from dnnv.nn import parse as parse_network, OperationGraph
 from dnnv.nn.operations import Relu, Operation
 from dnnv.properties import parse as parse_property
 from dnnv.verifiers.common import ConvexPolytopeExtractor
-from r4v.nn_v2 import load_network
-from r4v.nn_v2.pytorch import Relu
+from r4v.nn import load_network
+from r4v.nn.pytorch import Relu
 
 
 def _parse_args():

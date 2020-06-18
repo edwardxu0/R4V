@@ -127,6 +127,10 @@ class Scalable(Layer):
     OP_PATTERN = NotImplemented
 
     def scale(self, factor: float, attribute=None):
+        if self.__class__.scale == Scalable.scale:
+            raise NotImplementedError(
+                f"{self.__class__.__name__} has not implemented method 'scale'"
+            )
         self.modified = True
 
 

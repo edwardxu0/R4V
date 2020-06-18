@@ -30,6 +30,9 @@ class Flatten(Layer):
     def __repr__(self):
         return f"Flatten({self.axis})"
 
+    def num_neurons(self, *args):
+        return 0
+
     @classmethod
     def from_operation_graph(cls, op_graph: OperationGraph):
         input_shape = op_graph.input_shape
@@ -79,6 +82,9 @@ class Reshape(Layer):
         shape_s = ", ".join(str(d) for d in self.shape)
         return f"Reshape({shape_s})"
 
+    def num_neurons(self, *args):
+        return 0
+
     @classmethod
     def from_operation_graph(cls, op_graph: OperationGraph):
         input_shape = op_graph.input_shape
@@ -121,6 +127,9 @@ class Transpose(Layer):
         perm_s = ", ".join(str(d) for d in self.permutation)
         return f"Transpose({perm_s})"
 
+    def num_neurons(self, *args):
+        return 0
+
     @classmethod
     def from_operation_graph(cls, op_graph: OperationGraph):
         input_shape = op_graph.input_shape
@@ -139,4 +148,4 @@ class Transpose(Layer):
         return PytorchTranspose(*self.permutation)
 
 
-__all__ = ["Flatten", "Input", "Transpose"]
+__all__ = ["Flatten", "Input", "Reshape", "Transpose"]

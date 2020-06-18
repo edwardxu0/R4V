@@ -10,11 +10,24 @@ from .cli import add_subparser
 from .config import DistillationConfiguration
 from .data import get_data_loader
 from .. import logging
-from ..nn_v2 import load_network
+from ..nn import load_network
 
 
 class DistillationError(RuntimeError):
     pass
+
+
+def transform_network(network, config):
+    logger = logging.getLogger(__name__)
+    for i, layer in enumerate(layer for layer in network.layers if not layer.dropped):
+        logger.debug("%d: %s", i, layer)
+        logger.debug("%d: (shape) %s -> %s", i, layer.input_shape, layer.output_shape)
+    for strategy in config.strategies:
+        strategy(network)
+    for i, layer in enumerate(layer for layer in network.layers if not layer.dropped):
+        logger.debug("%d: %s", i, layer)
+        logger.debug("%d: (shape) %s -> %s", i, layer.input_shape, layer.output_shape)
+    return network
 
 
 def _check_smaller(teacher, student, device=torch.device("cpu")):
@@ -130,7 +143,8 @@ def get_loss_function(loss, params):
         raise ValueError("Unknown loss type: %s" % loss)
 
 
-def get_optimizer(optimization_algorithm, dnn, params):
+def get_optimizer(dnn, params):
+    optimization_algorithm = params.get("optimizer", "SGD").lower()
     if optimization_algorithm == "sgd":
         return optim.SGD(
             dnn.parameters(),
@@ -182,6 +196,20 @@ def precompute_cache(dnn, train_loader, val_loader, config, device="cpu"):
     dnn.to(torch.device("cpu"))
 
 
+def get_student_export_path(config):
+    student_path = config.student.get("path", "/tmp/student.onnx")
+    student_path_dir = os.path.dirname(student_path)
+    student_path_base = os.path.basename(student_path)
+    student_path_base_name, student_path_base_ext = os.path.splitext(student_path_base)
+    if not os.path.exists(student_path_dir):
+        os.makedirs(student_path_dir)
+    student_path_template = os.path.join(
+        student_path_dir,
+        "".join((student_path_base_name + ".iter.%d", student_path_base_ext)),
+    )
+    return student_path, student_path_template
+
+
 def distill(config: DistillationConfiguration) -> None:
     logger = logging.getLogger(__name__)
 
@@ -204,63 +232,45 @@ def distill(config: DistillationConfiguration) -> None:
     if config.get("precompute_teacher", False):
         precompute_cache(teacher, train_loader, val_loader, config, device=device)
 
-    iteration = 0
-    student_path = config.student.get("path", "/tmp/student.onnx")
-    student_path_dir = os.path.dirname(student_path)
-    student_path_base = os.path.basename(student_path)
-    student_path_base_name, student_path_base_ext = os.path.splitext(student_path_base)
-    if not os.path.exists(student_path_dir):
-        os.makedirs(student_path_dir)
-    if config.get("save_intermediate", False):
-        student_path_template = os.path.join(
-            student_path_dir,
-            "".join((student_path_base_name + ".iter.%d", student_path_base_ext)),
-        )
-        logger.info(
-            "Saving initial student model to %s", (student_path_template % iteration)
-        )
-        student.export_onnx(student_path_template % iteration)
-
     student.to(device)
     student.train()
 
-    prediction_type = config.get("type", "classification")
     params = config.parameters
-    num_epochs = params.get("epochs", 100)
     logger.debug("Training parameters: %s", params)
-    loss = params.get("loss", "KD").lower()
-    assert prediction_type == "classification" or loss != "KD"
-    loss_fn = get_loss_function(loss, params)
-    optimization_algorithm = params.get("optimizer", "SGD").lower()
-    optimizer = get_optimizer(optimization_algorithm, student, params)
 
+    loss = params.get("loss", "KD").lower()
+    assert config.get("type", "classification") == "classification" or loss != "KD"
+    loss_fn = get_loss_function(loss, params)
+    optimizer = get_optimizer(student, params)
+
+    for extra_loss in config.extra_loss:
+        extra_loss.initialize(student)
+
+    epoch = 0
     best_epoch = 0
     best_val_loss = float("inf")
-    while iteration < num_epochs:
-        iteration += 1
+    num_epochs = params.get("epochs", 100)
+    student_path, student_path_template = get_student_export_path(config)
+    if config.get("save_intermediate", False):
+        student.export_onnx(student_path_template % epoch)
+    while epoch < num_epochs:
+        epoch += 1
         train(
-            teacher,
-            student,
-            train_loader,
-            loss_fn,
-            optimizer,
-            device,
-            prediction_type,
-            config,
+            epoch, teacher, student, train_loader, loss_fn, optimizer, device, config,
         )
         if config.get("save_intermediate", False):
-            student.export_onnx(student_path_template % iteration)
+            student.export_onnx(student_path_template % epoch)
         if not config.get("novalidation", False):
             error = validate(
-                teacher, student, val_loader, loss_fn, device, prediction_type, config
+                epoch, teacher, student, val_loader, loss_fn, device, config
             )
             if error["loss"] < best_val_loss:
                 best_val_loss = error["loss"]
-                best_epoch = iteration
+                best_epoch = epoch
                 student.export_onnx(student_path)
             logger.info(
                 "Epoch %d (best epoch = %d, loss = %.6f)",
-                iteration,
+                epoch,
                 best_epoch,
                 best_val_loss,
             )
@@ -268,19 +278,6 @@ def distill(config: DistillationConfiguration) -> None:
                 break
     if config.get("novalidation", False):
         student.export_onnx(student_path)
-
-
-def transform_network(network, config):
-    logger = logging.getLogger(__name__)
-    for i, layer in enumerate(layer for layer in network.layers if not layer.dropped):
-        logger.debug("%d: %s", i, layer)
-        logger.debug("%d: (shape) %s -> %s", i, layer.input_shape, layer.output_shape)
-    for strategy in config.strategies:
-        strategy(network)
-    for i, layer in enumerate(layer for layer in network.layers if not layer.dropped):
-        logger.debug("%d: %s", i, layer)
-        logger.debug("%d: (shape) %s -> %s", i, layer.input_shape, layer.output_shape)
-    return network
 
 
 def check_finite(total_loss, student_y, teacher_y):
@@ -316,7 +313,7 @@ def write_loss_log(i, data_loader, loss, total_loss, num_samples, total_num_samp
     if (i + 1) % 25 == 0:
         logger.info(
             "(%7d / %7d): %.6f %.6f",
-            (i + 1) * data_loader.batch_size,
+            i * data_loader.batch_size + num_samples,
             len(data_loader.dataset),
             loss.item() / num_samples,
             total_loss / total_num_samples,
@@ -324,16 +321,14 @@ def write_loss_log(i, data_loader, loss, total_loss, num_samples, total_num_samp
     elif (i + 1) % 1 == 0:
         logger.debug(
             "(%7d / %7d): %.6f %.6f",
-            (i + 1) * data_loader.batch_size,
+            i * data_loader.batch_size + num_samples,
             len(data_loader.dataset),
             loss.item() / num_samples,
             total_loss / total_num_samples,
         )
 
 
-def train(
-    teacher, student, data_loader, loss_fn, optimizer, device, prediction_type, config
-):
+def train(epoch, teacher, student, data_loader, loss_fn, optimizer, device, config):
     logger = logging.getLogger(__name__)
     total_loss = 0.0
     total_num_samples = 0.0
@@ -360,17 +355,18 @@ def train(
             check_finite(total_loss, student_y, teacher_y)
 
     for extra_loss in config.extra_loss:
-        extra_loss.step(student, optimizer, device=device)
+        extra_loss.step(epoch, student, device=device)
     logger.info("training loss: %.6f", total_loss / (total_num_samples + 1e-16))
 
 
-def validate(teacher, student, data_loader, loss_fn, device, prediction_type, config):
+def validate(epoch, teacher, student, data_loader, loss_fn, device, config):
     logger = logging.getLogger(__name__)
     student_error = 0.0
     teacher_error = 0.0
     relative_error = 0.0
     num_samples = 0.0
     relative_num_samples = 0.0
+    prediction_type = config.get("type", "classification")
     with torch.no_grad():
         for i, (idx, t_x, s_x, target) in enumerate(data_loader):
             s_x = s_x.to(device)

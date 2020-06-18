@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.optim as optim
 
 from .. import logging
 from ..utils import get_subclasses
@@ -9,15 +10,23 @@ class Loss:
     def __init__(self, config):
         self.config = config
 
-    def step(self, model, optimizer, device="cpu"):
+    def initialize(self, model):
+        self.optimizer = optim.Adam(
+            model.parameters(),
+            lr=self.config.get("learning_rate", 0.001),
+            betas=(self.config.get("beta1", 0.9), self.config.get("beta2", 0.999)),
+            weight_decay=self.config.get("weight_decay", 0),
+        )
+
+    def step(self, epoch, model, device="cpu"):
         logger = logging.getLogger(__name__)
         if self.config.get("validation_only", False):
             return
         for i in range(self.config.get("iterations", 1)):
-            optimizer.zero_grad()
+            self.optimizer.zero_grad()
             loss = self.compute_loss(model, device=device)
             loss.backward()
-            optimizer.step()
+            self.optimizer.step()
         logger.info("%s: %f", self.__class__.__name__, loss.item())
 
     def compute_loss(self, model, device="cpu"):
@@ -39,7 +48,7 @@ class ReluLoss(Loss):
         return torch.from_numpy(np.concatenate(x_)).float()
 
     def _loss(self, model, x):
-        from ..nn_v2.pytorch import Relu
+        from ..nn.pytorch import Relu
 
         Relu.pre_relu_values = torch.zeros(x.size(0), device=x.device) + float("inf")
 
@@ -58,7 +67,7 @@ class ReluLoss(Loss):
         # high loss if sample is far from center
         _ = model(x)
         Relu.forward = orig_relu_forward
-        return torch.exp(-Relu.pre_relu_values).sum()
+        return torch.exp(-Relu.pre_relu_values).sum() / len(x)
 
     def compute_loss(self, model, device="cpu"):
         x = self.sample_input_region().to(device)

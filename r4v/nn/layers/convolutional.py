@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 from .base import Droppable, Scalable
 from .utils import single
 from ..pytorch import Relu as PytorchRelu, Sequential
+from ...errors import R4VError
 
 
 class Convolutional(Droppable, Scalable):
@@ -83,6 +84,19 @@ class Convolutional(Droppable, Scalable):
             strides,
             pads,
             activation,
+        )
+
+    def scale(self, factor: float, attribute=None):
+        assert attribute is None
+        super().scale(factor)
+        new_size = int(self.output_shape[1] * factor)
+        if new_size < 1:
+            raise R4VError("Cannot scale convolutional layers to 0 neurons")
+        self.output_shape = (
+            self.output_shape[0],
+            new_size,
+            self.output_shape[2],
+            self.output_shape[3],
         )
 
     def as_pytorch(self, maintain_weights: bool = False) -> nn.Module:

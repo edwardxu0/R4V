@@ -6,6 +6,7 @@ import argparse
 
 from .. import distillation
 from .. import info
+from .. import repair
 
 from . import utils as cli_utils
 
@@ -22,6 +23,7 @@ def parse_args():
     # add subparsers here
     distillation.add_subparser(subparsers)
     info.add_subparser(subparsers)
+    repair.add_subparser(subparsers)
 
     parser_help = subparsers.add_parser(
         "help",

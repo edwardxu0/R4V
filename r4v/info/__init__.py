@@ -5,7 +5,7 @@ import importlib
 from pathlib import Path
 from .. import logging
 from .cli import add_subparser
-from ..nn import load_network, Droppable, Linearizable, Rescalable
+from ..nn import load_network, Droppable, Linearizable, Scalable
 
 
 class Color:
@@ -23,7 +23,7 @@ class Color:
 
 def show(args):
     logger = logging.getLogger(__name__)
-    for plugin_path in args.plugins:
+    for _, plugin_path in args.plugins:
         plugin_name = Path(plugin_path).stem
         spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
         mod = importlib.util.module_from_spec(spec)
@@ -41,11 +41,11 @@ def show(args):
     print(Color.NONE + "LEGEND:")
     print(Color.NONE + " - " + Color.BLUE + "Droppable")
     print(Color.NONE + " - " + Color.YELLOW + "Linearizable")
-    print(Color.NONE + " - " + Color.RED + "Rescalable")
+    print(Color.NONE + " - " + Color.RED + "Scalable")
     print(Color.NONE + " - " + Color.GREEN + "Droppable, Linearizable")
-    print(Color.NONE + " - " + Color.PURPLE + "Droppable, Rescalable")
-    print(Color.NONE + " - " + Color.CYAN + "Linearizable, Rescalable")
-    print(Color.NONE + " - " + Color.WHITE + "Droppable, Linearizable, Rescalable")
+    print(Color.NONE + " - " + Color.PURPLE + "Droppable, Scalable")
+    print(Color.NONE + " - " + Color.CYAN + "Linearizable, Scalable")
+    print(Color.NONE + " - " + Color.WHITE + "Droppable, Linearizable, Scalable")
     print(Color.NONE + " - " + Color.GRAY + "Not Modifiable")
     print(Color.NONE + "======================================\n")
 
@@ -54,20 +54,20 @@ def show(args):
         if (
             isinstance(layer, Droppable)
             and isinstance(layer, Linearizable)
-            and isinstance(layer, Rescalable)
+            and isinstance(layer, Scalable)
         ):
             color = Color.WHITE
         elif isinstance(layer, Droppable) and isinstance(layer, Linearizable):
             color = Color.GREEN
-        elif isinstance(layer, Droppable) and isinstance(layer, Rescalable):
+        elif isinstance(layer, Droppable) and isinstance(layer, Scalable):
             color = Color.PURPLE
-        elif isinstance(layer, Linearizable) and isinstance(layer, Rescalable):
+        elif isinstance(layer, Linearizable) and isinstance(layer, Scalable):
             color = Color.CYAN
         elif isinstance(layer, Droppable):
             color = Color.BLUE
         elif isinstance(layer, Linearizable):
             color = Color.YELLOW
-        elif isinstance(layer, Rescalable):
+        elif isinstance(layer, Scalable):
             color = Color.RED
         print("\033[0mLayer %4d: %s%s" % (i, color, layer))
         print("\033[0m            %s -> %s" % (layer.input_shape, layer.output_shape))
@@ -76,5 +76,5 @@ def show(args):
 
     print()
     pytorch_model = network.as_pytorch()
-    print("Number of neurons:", pytorch_model.num_neurons())
-    print("Number of parameters:", pytorch_model.num_parameters)
+    print("Number of neurons:", network.num_neurons())
+    print("Number of parameters:", network.num_parameters)

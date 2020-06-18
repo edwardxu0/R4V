@@ -3,7 +3,7 @@ import toml
 import torch
 
 from r4v.distillation.data import get_data_loader
-from r4v.nn_v2 import load_network
+from r4v.nn import load_network
 
 
 def measure_performance(config, *, student=None, teacher=None):

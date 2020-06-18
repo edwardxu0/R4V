@@ -38,4 +38,4 @@ class Relu(Activation):
         return PytorchRelu()
 
 
-__all__ = ["Identity", "Relu"]
+__all__ = ["Activation", "Identity", "Relu"]

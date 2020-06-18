@@ -89,4 +89,4 @@ class Mul(SizePreserving):
         return PytorchMultiply(self.const)
 
 
-__all__ = ["Atan", "Mul"]
+__all__ = ["Atan", "LogSoftmax", "Mul"]

@@ -5,6 +5,7 @@ from functools import partial
 from .. import logging
 from ..config import parse, Configuration
 from ..distillation import strategies as distillation_strategies
+from . import hooks
 from . import optimization
 
 
@@ -49,6 +50,15 @@ class DistillationConfiguration(Configuration):
             for extra_loss in self.config.get("extra_loss", []):
                 extra_losses.append(optimization.build_loss(extra_loss))
             self._cache["extra_losses"] = extra_losses
+        return self._cache["extra_losses"]
+
+    @property
+    def hooks(self):
+        if "hooks" not in self._cache:
+            distillation_hooks = []
+            for hook in self.config.get("hooks", []):
+                distillation_hooks.append(hooks.build_hook(hook))
+            self._cache["extra_losses"] = distillation_hooks
         return self._cache["extra_losses"]
 
 

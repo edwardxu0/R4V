@@ -62,6 +62,12 @@ class Configuration:
         return DistillationConfiguration(self.config["distillation"])
 
     @property
+    def repair(self):
+        from .repair import RepairConfiguration
+
+        return RepairConfiguration(self.config["repair"])
+
+    @property
     def max_memory(self):
         maxmem = self.config.get("maxmemory", -1)
         if isinstance(maxmem, int):

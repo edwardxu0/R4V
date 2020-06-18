@@ -111,10 +111,9 @@ tmp/
 
 # Project specific
 /bin/
-artifacts/dronet*
-artifacts/udacity.sdc*
+/artifacts/
 r4v.tar.gz
 results*
-properties/*
+/properties*
 **/data/*
 **/tmp/*
