@@ -8,6 +8,10 @@ def drop_layer(model, layer_id, layer_type=None):
         model.drop_layer(layer_id)
 
 
+def add_layer(model, layer_id, layer_type=None, parameters=None, activation_function=None):
+    model.add_layer(layer_id, layer_type=layer_type, parameters=parameters, activation_function=activation_function)
+
+
 def drop_operation(model, layer_id, op_type, layer_type=None):
     if layer_type is not None:
         model.drop_operation(layer_id, op_type, layer_type=layer_type)

@@ -222,6 +222,7 @@ class Dronet(TeacherStudentDataset):
             & (np.isnan(target0) == np.isnan(target1))
         ).all()
 
+        
 
 class DuplicateTeacher(data.Dataset):
     def __init__(self, dataset):
@@ -268,7 +269,7 @@ def get_data_transform(
             data_transforms.append(transforms.CenterCrop((crop_height, crop_width)))
         data_transforms.append(transforms.ToTensor())
     data_transforms.append(
-        transforms.Lambda(lambda t: t * transform_config.get("max_value", 1.0))
+        transforms.Lambda(lambda t: t * transform_config.get("max_value", 1.0)) 
     )
     transform_normalize_mean = transform_config.get("mean", None)
     if transform_normalize_mean is not None:
@@ -294,6 +295,8 @@ def get_data_loader(data_config):
         return udacity_driving(data_config)
     elif data_format == "dronet":
         return dronet(data_config)
+    elif data_format == "acas":
+        return acas(data_config)
     else:
         raise ValueError("Unknown data format: %s" % data_format)
 
@@ -323,12 +326,17 @@ def image_net(data_config):
 def udacity_driving(data_config):
     batch_size = data_config.batch_size
 
-    transform = get_data_transform(
-        data_config.transform, default_height=100, default_width=100
+    transform_config = data_config.transform
+    teacher_transform = get_data_transform(
+        transform_config.get("teacher", transform_config),
+        default_height=100, default_width=100
     )
-
+    student_transform = get_data_transform(
+        transform_config.get("student", transform_config),
+        default_height=100, default_width=100
+    )
     dataset = UdacityDriving(
-        data_config.teacher.path, data_config.student.path, transforms=transform
+        data_config.teacher.path, data_config.student.path, transforms=[teacher_transform,student_transform]
     )
     return DataLoader(
         dataset,
@@ -337,6 +345,99 @@ def udacity_driving(data_config):
         num_workers=1,
         pin_memory=True,
     )
+
+
+class MNIST(data.Dataset):
+    def __init__(self, root, transforms=None, target_transforms=None, loader=default_loader):
+        self.dataset = datasets.MNIST(root, train=True, transform=None, target_transform=None, download=True)
+        self.transforms = transforms
+        self.target_transforms = target_transforms
+
+    def assert_same_targets(self, target0, target1):
+        assert target0 == target1
+
+    def __getitem__(self, index):
+        samples = []
+        targets = []
+
+        for i in range(len(self.transforms)):
+            sample, target = self.dataset[index]
+            if self.transforms is not None:
+                sample = self.transforms[i](sample)
+            if self.target_transforms is not None:
+                target = self.target_transforms[i](target)
+            samples.append(sample)
+            targets.append(target)
+            self.assert_same_targets(target, targets[0])
+
+        return tuple([index] + samples + [target])
+
+    def __len__(self):
+        return len(self.dataset)
+
+    
+def mnist(data_config):
+    is_train_data = data_config.get("_STAGE", "test") == "train"
+    assert data_config.teacher.path == data_config.student.path
+    
+    transform_config = data_config.transform
+    teacher_transform = get_data_transform(
+        transform_config.get("teacher", transform_config),
+        default_height=28, default_width=28
+    )
+    student_transform = get_data_transform(
+        transform_config.get("student", transform_config),
+        default_height=28, default_width=28
+    )
+
+    assert data_config.teacher.path == data_config.student.path
+    dataset = MNIST(
+        data_config.teacher.path,
+        transforms=[teacher_transform, student_transform],
+    )
+
+    data_loader = DataLoader(
+        dataset,
+        batch_size=data_config.batch_size,
+        shuffle=data_config.get("shuffle", False),
+        num_workers=1,
+    )
+    return data_loader
+
+
+def acas(data_config):
+    batch_size = data_config.batch_size
+    dataset = ACAS(
+        data_config.teacher.path, data_config.student.path
+    )
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=data_config.get("shuffle", False),
+        num_workers=1,
+        pin_memory=True,
+    )
+
+
+class ACAS(data.Dataset):
+    def __init__(self, troot, sroot):
+        self.data_teacher = np.load(os.path.join(troot,'data.npy')).astype(np.float32)
+        self.labels_teacher = np.load(os.path.join(troot,'label.npy')).astype(np.float32)
+        self.data_student = np.load(os.path.join(troot,'data.npy')).astype(np.float32)
+        self.labels_student = np.load(os.path.join(troot,'label.npy')).astype(np.float32)
+        
+    def __getitem__(self, index):
+        sample_data_teacher = torch.from_numpy(self.data_teacher[index])
+        sample_labels_teacher = torch.from_numpy(self.labels_teacher[index])
+        sample_data_student = torch.from_numpy(self.data_student[index])
+        sample_labels_student = torch.from_numpy(self.labels_student[index])
+        
+        assert torch.equal(sample_labels_teacher, sample_labels_student)
+        return index,sample_data_teacher,sample_data_student,sample_labels_teacher
+    
+
+    def __len__(self):
+        return len(self.data_teacher)
 
 
 def dronet(data_config):
@@ -374,23 +475,57 @@ def dronet(data_config):
     )
 
 
-def mnist(data_config):
+class CIFAR10(data.Dataset):
+    def __init__(self, root, transforms=None, target_transforms=None, loader=default_loader):
+        self.dataset = datasets.CIFAR10(root, train=True, transform=None, target_transform=None, download=True)
+        self.transforms = transforms
+        self.target_transforms = target_transforms
+
+    def assert_same_targets(self, target0, target1):
+        assert target0 == target1
+
+    def __getitem__(self, index):
+        samples = []
+        targets = []
+
+        for i in range(len(self.transforms)):
+            sample, target = self.dataset[index]
+            if self.transforms is not None:
+                sample = self.transforms[i](sample)
+            if self.target_transforms is not None:
+                target = self.target_transforms[i](target)
+            samples.append(sample)
+            targets.append(target)
+            self.assert_same_targets(target, targets[0])
+
+        return tuple([index] + samples + [target])
+
+    def __len__(self):
+        return len(self.dataset)
+
+    
+def cifar10(data_config):
     is_train_data = data_config.get("_STAGE", "test") == "train"
     assert data_config.teacher.path == data_config.student.path
-
-    transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+    
+    transform_config = data_config.transform
+    teacher_transform = get_data_transform(
+        transform_config.get("teacher", transform_config),
+        default_height=32, default_width=32
+    )
+    student_transform = get_data_transform(
+        transform_config.get("student", transform_config),
+        default_height=32, default_width=32
     )
 
-    data_set = datasets.MNIST(
-        root=data_config.teacher.path,
-        train=is_train_data,
-        download=True,
-        transform=transform,
+    assert data_config.teacher.path == data_config.student.path
+    dataset = CIFAR10(
+        data_config.teacher.path,
+        transforms=[teacher_transform, student_transform],
     )
 
     data_loader = DataLoader(
-        DuplicateTeacher(data_set),
+        dataset,
         batch_size=data_config.batch_size,
         shuffle=data_config.get("shuffle", False),
         num_workers=1,
@@ -398,7 +533,7 @@ def mnist(data_config):
     return data_loader
 
 
-class CIFAR10:
+class CIFAR10_backup:
     def __init__(self, root=None, train=True):
         self.root = root
         self.train = train
@@ -430,7 +565,7 @@ class CIFAR10:
         return img, target
 
 
-def cifar10(data_config):
+def cifar10_backup(data_config):
     is_train_data = data_config.get("_STAGE", "test") == "train"
     assert data_config.teacher.path == data_config.student.path
 
