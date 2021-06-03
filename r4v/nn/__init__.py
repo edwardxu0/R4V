@@ -1635,7 +1635,7 @@ class DNN:
                         kernel_size = parameters[1]
                         stride = parameters[2]
                         if len(parameters) == 4:
-                            assert parameters[3].lower() == 'valid', 'Supports VALID padding only for now.'
+                            assert parameters[3] in ['valid', 'VALID', 0], 'Supports VALID padding only for now.'
                         padding = 0
 
                         conv_node = onnx.helper.make_node(
