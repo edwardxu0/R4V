@@ -9,7 +9,7 @@ from collections import defaultdict, Iterable
 from functools import partial
 from itertools import chain
 from onnx import numpy_helper
-from copy import copy
+from copy import copy, deepcopy
 
 from .. import logging
 from .pytorch import (
@@ -1475,6 +1475,138 @@ class DNN:
         else:
             self.added_layers += [layer_tuple]
 
+        tmp_layers = deepcopy(self.layers)
+        for pos in layer_id:
+            layer_before = None
+            layer_next = None
+            postfix = uuid.uuid4()
+            if layer_type == FullyConnected:
+                assert len(parameters) == 1, f"Wrong parameters for adding a {layer_type} layer at position {pos}: {parameters}"
+
+                nb_neurons = parameters[0]
+                gemm_node = onnx.helper.make_node(
+                    "Gemm",
+                    inputs=[f'Gemm_{postfix}.input1', f'Gemm_{postfix}.weight', f'Gemm_{postfix}.bias'],
+                    outputs=[f'Gemm_{postfix}.output'],
+                    # alpha=1.0,# beta=1.0,# transA=False,# transB=False,
+                    name=f'Gemm_{postfix}',
+                )
+
+                # get output shape of the most recent non-dropped layer
+                for i in reversed(range(0, pos)):
+                    layer_before = tmp_layers[i]
+                    if not layer_before.dropped:
+                        input_shape = layer_before.output_shape
+                        assert len(input_shape) == 2
+                        assert input_shape[0] == 1
+                        break
+
+                output_shape = (1, nb_neurons)
+                # modify the input shape of next non-dropped layer
+                for i in range(pos, len(tmp_layers)):
+                    layer_next = tmp_layers[i]
+                    if not layer_next.dropped:
+                        assert len(layer_next.input_shape) == 2
+                        assert layer_next.input_shape[0] == 1
+                        layer_next.input_shape = output_shape
+                        break
+
+                weights_shape = (input_shape[1], nb_neurons)
+                bias_shape = (nb_neurons)
+                dummy_weights = np.random.uniform(low=0.0, high=1.0, size=weights_shape)
+                dummy_weights = numpy_helper.from_array(dummy_weights)
+                dummy_bias = np.random.uniform(low=0.0, high=1.0, size=bias_shape)
+                dummy_bias = numpy_helper.from_array(dummy_bias)
+
+                node_list_fc = [gemm_node, None, dummy_weights, dummy_bias]
+                node_list = [node_list_fc]
+
+                if activation_function == 'relu':
+                    node_relu = onnx.helper.make_node(
+                       "Relu", inputs=[f'input_relu_{postfix}'], outputs=[f'output_relu_{postfix}'], name=f'relu_{postfix}')
+                    node_list_relu = [node_relu, None]
+                    node_list += [node_list_relu]
+                new_layer = GemmFullyConnected(node_list)
+
+            elif layer_type == Convolutional:
+                assert len(parameters) >= 3, f"Wrong parameters for adding a {layer_type} layer at position {pos}: {parameters}"
+
+                nb_kernels = parameters[0]
+                kernel_size = parameters[1]
+                stride = parameters[2]
+                if len(parameters) == 4:
+                    assert parameters[3] in ['valid', 'VALID', 0], 'Supports VALID padding only for now.'
+                padding = 0
+
+                conv_node = onnx.helper.make_node(
+                    "Conv",
+                    inputs=[f'Conv_{postfix}.input1', f'Conv_{postfix}.weight', f'Conv_{postfix}.bias'],
+                    outputs=[f'Conv_{postfix}.output'],
+                    # alpha=1.0,# beta=1.0,# transA=False,# transB=False,
+                    name=f'Conv_{postfix}',
+                )
+
+                # get output shape of the most recent non-dropped layer
+                for i in reversed(range(0, pos)):
+                    layer_before = tmp_layers[i]
+                    if not layer_before.dropped:
+                        input_shape = layer_before.output_shape
+                        assert len(input_shape) == 4
+                        assert input_shape[0] == 1
+                        assert input_shape[2] == input_shape[3]
+                        break
+                # print('input_shape', input_shape)
+                shape = ((input_shape[2] - kernel_size + 2 * padding) // stride) + 1
+                output_shape = [1, nb_kernels, shape, shape]
+                # print('output_shape', output_shape)
+
+                # modify the input shape of next non-dropped layer
+                for i in range(pos, len(tmp_layers)):
+                    layer_next = tmp_layers[i]
+                    if not layer_next.dropped:
+                        assert len(layer_next.input_shape) == 4
+                        assert layer_next.input_shape[0] == 1
+                        layer_next.input_shape = output_shape
+                        break
+
+                dummy_weights = np.random.uniform(low=0.0, high=1.0, size=(nb_kernels,input_shape[1],kernel_size,kernel_size))
+                # print(dummy_weights.shape)
+                dummy_weights = numpy_helper.from_array(dummy_weights)
+
+                dummy_bias = np.random.uniform(low=0.0, high=1.0, size=(nb_kernels))
+                # print(dummy_bias.shape)
+                dummy_bias = numpy_helper.from_array(dummy_bias)
+
+                node_list_conv = [conv_node, None, dummy_weights, dummy_bias]
+                node_list = [node_list_conv]
+
+                if activation_function == 'relu':
+                    node_relu = onnx.helper.make_node(
+                       "Relu", inputs=[f'input_relu_{postfix}'], outputs=[f'output_relu_{postfix}'], name=f'relu_{postfix}')
+                    node_list_relu = [node_relu, None]
+                    node_list += [node_list_relu]
+                new_layer = Convolutional(node_list)
+
+            else:
+                raise NotImplementedError(f"Adding layer of type: {layer_type} is not implemented yet.")
+
+            # set connections between the new layer and the layer before as well as the layer next to it
+            assert layer_before is not None and layer_next is not None
+            new_layer.input_shape = input_shape
+            new_layer.output_shape = output_shape
+
+            assert len(layer_before._outputs) == 1 and len(layer_next._inputs) == 1
+            layer_before._outputs = [new_layer]
+            new_layer._inputs = [layer_before]
+            new_layer._outputs = [layer_next]
+            layer_next._inputs = [new_layer]
+
+            new_layer = add_layer(new_layer)
+            tmp_layers.insert(pos, new_layer)
+
+        self.layers = tmp_layers
+        self.final_layer_index = len(self.layers)-1
+
         return self
 
     def drop_operation(self, layer_id, op_type, layer_type=DroppableOperations):
@@ -1575,136 +1707,8 @@ class DNN:
         return self
 
     def as_pytorch(self, maintain_weights=False):
-        if hasattr(self, 'added_layers'):
-            tmp_layers = copy(self.layers)
-            for layer_id, layer_type, activation_function, parameters in self.added_layers:
-                nb_added_layers = 0
-                for pos in layer_id:
-                    postfix = uuid.uuid4()
-                    if layer_type == FullyConnected:
-                        assert len(parameters) == 1, f"Wrong parameters for adding a {layer_type} layer at position {pos}: {parameters}"
-
-                        nb_neurons = parameters[0]
-                        gemm_node = onnx.helper.make_node(
-                            "Gemm",
-                            inputs=[f'Gemm_{postfix}.input1', f'Gemm_{postfix}.weight', f'Gemm_{postfix}.bias'],
-                            outputs=[f'Gemm_{postfix}.output'],
-                            # alpha=1.0,# beta=1.0,# transA=False,# transB=False,
-                            name=f'Gemm_{postfix}',
-                        )
-
-                        # get output shape of the most recent non-dropped layer
-                        for i in reversed(range(0, pos)):
-                            if not tmp_layers[i].dropped:
-                                input_shape = tmp_layers[i].output_shape
-                                assert len(input_shape) == 2
-                                assert input_shape[0] == 1
-                                break
-
-                        output_shape = (1, nb_neurons)
-                        # modify the input shape of next non-dropped layer
-                        for i in range(pos, len(tmp_layers)):
-                            if not tmp_layers[i].dropped:
-                                assert len(tmp_layers[i].input_shape) == 2
-                                assert tmp_layers[i].input_shape[0] == 1
-                                tmp_layers[i].input_shape = output_shape
-                                break
-                        weights_shape = (input_shape[1], nb_neurons)
-                        bias_shape = (nb_neurons)
-                        dummy_weights = np.random.uniform(low=0.0, high=1.0, size=weights_shape)
-                        dummy_weights = numpy_helper.from_array(dummy_weights)
-                        dummy_bias = np.random.uniform(low=0.0, high=1.0, size=bias_shape)
-                        dummy_bias = numpy_helper.from_array(dummy_bias)
-
-                        node_list_fc = [gemm_node, None, dummy_weights, dummy_bias]
-                        node_list = [node_list_fc]
-
-                        if activation_function == 'relu':
-                            node_relu = onnx.helper.make_node(
-                               "Relu", inputs=[f'input_relu_{postfix}'], outputs=[f'output_relu_{postfix}'], name=f'relu_{postfix}')
-                            node_list_relu = [node_relu, None]
-                            node_list += [node_list_relu]
-                        new_layer = GemmFullyConnected(node_list)
-                        new_layer.input_shape = input_shape
-                        new_layer.output_shape = output_shape
-
-                    elif layer_type == Convolutional:
-                        assert len(parameters) >= 3, f"Wrong parameters for adding a {layer_type} layer at position {pos}: {parameters}"
-
-                        nb_kernels = parameters[0]
-                        kernel_size = parameters[1]
-                        stride = parameters[2]
-                        if len(parameters) == 4:
-                            assert parameters[3] in ['valid', 'VALID', 0], 'Supports VALID padding only for now.'
-                        padding = 0
-
-                        conv_node = onnx.helper.make_node(
-                            "Conv",
-                            inputs=[f'Conv_{postfix}.input1', f'Conv_{postfix}.weight', f'Conv_{postfix}.bias'],
-                            outputs=[f'Conv_{postfix}.output'],
-                            # alpha=1.0,# beta=1.0,# transA=False,# transB=False,
-                            name=f'Conv_{postfix}',
-                        )
-
-                        # get output shape of the most recent non-dropped layer
-                        for i in reversed(range(0, pos)):
-                            if not tmp_layers[i].dropped:
-                                input_shape = tmp_layers[i].output_shape
-                                assert len(input_shape) == 4
-                                assert input_shape[0] == 1
-                                assert input_shape[2] == input_shape[3]
-                                break
-                        # print('input_shape', input_shape)
-                        shape = ((input_shape[2] - kernel_size + 2 * padding) // stride) + 1
-                        output_shape = [1, nb_kernels, shape, shape]
-                        # print('output_shape', output_shape)
-
-                        # modify the input shape of next non-dropped layer
-                        for i in range(pos, len(tmp_layers)):
-                            if not tmp_layers[i].dropped:
-                                assert len(tmp_layers[i].input_shape) == 4
-                                assert tmp_layers[i].input_shape[0] == 1
-                                tmp_layers[i].input_shape = output_shape
-                                break
-
-                        dummy_weights = np.random.uniform(low=0.0, high=1.0, size=(nb_kernels,input_shape[1],kernel_size,kernel_size))
-                        # print(dummy_weights.shape)
-                        dummy_weights = numpy_helper.from_array(dummy_weights)
-
-                        dummy_bias = np.random.uniform(low=0.0, high=1.0, size=(nb_kernels))
-                        # print(dummy_bias.shape)
-                        dummy_bias = numpy_helper.from_array(dummy_bias)
-
-                        node_list_conv = [conv_node, None, dummy_weights, dummy_bias]
-                        node_list = [node_list_conv]
-
-                        if activation_function == 'relu':
-                            node_relu = onnx.helper.make_node(
-                               "Relu", inputs=[f'input_relu_{postfix}'], outputs=[f'output_relu_{postfix}'], name=f'relu_{postfix}')
-                            node_list_relu = [node_relu, None]
-                            node_list += [node_list_relu]
-                        new_layer = Convolutional(node_list)
-                        new_layer.input_shape = input_shape
-                        new_layer.output_shape = output_shape
-
-                    else:
-                        raise NotImplementedError(f"Adding layer of type: {layer_type} is not implemented yet.")
-
-                    add_layer(new_layer)
-                    tmp_layers.insert(pos, copy(new_layer))
-                    nb_added_layers += 1
-
-            self.layers = tmp_layers
-
         if any(layer.modified for layer in self.layers) and maintain_weights:
             raise ValueError("Cannot maintain weights. Network has been modified.")
-
-
-        logger = logging.getLogger(__name__)
-        for i,layer in enumerate(layer for layer in self.layers if not layer.dropped):
-            logger.debug("%d: %s", i, layer)
-            logger.debug("%d: (shape) %s -> %s", i, layer.input_shape, layer.output_shape)
-        logger.debug('')
 
         return Net(
             [

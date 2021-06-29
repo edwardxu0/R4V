@@ -268,16 +268,19 @@ def distill(config: DistillationConfiguration) -> None:
 
 def transform_network(network, config):
     logger = logging.getLogger(__name__)
-    #logger.debug("----------Teacher network specification----------")
-    #for i, layer in enumerate(layer for layer in network.layers if not layer.dropped):
-    #    logger.debug("%d: %s", i, layer)
-    #    logger.debug("%d: (shape) %s -> %s", i, layer.input_shape, layer.output_shape)
-    #logger.debug('')
+    logger.debug("----------Teacher network specification----------")
+    for i, layer in enumerate(layer for layer in network.layers if not layer.dropped):
+        logger.debug("%d: %s", i, layer)
+        logger.debug("%d: (shape) %s -> %s", i, layer.input_shape, layer.output_shape)
+
     for strategy in config.strategies:
         strategy(network)
-    #for i, layer in enumerate(layer for layer in new_net.layers if not layer.dropped):
-    #    logger.debug("%d: %s", i, layer)
-    #    logger.debug("%d: (shape) %s -> %s", i, layer.input_shape, layer.output_shape)
+
+    logger.debug("----------Student network specification----------")
+    for i, layer in enumerate(layer for layer in network.layers if not layer.dropped):
+        logger.debug("%d: %s", i, layer)
+        logger.debug("%d: (shape) %s -> %s", i, layer.input_shape, layer.output_shape)
+
     return network
 
 
