@@ -5,7 +5,12 @@ import torch
 import torch.nn as nn
 import uuid
 
-from collections import defaultdict, Iterable
+try:
+    from collections import Iterable
+except ImportError:
+    from collections.abc import Iterable
+from collections import defaultdict
+
 from functools import partial
 from itertools import chain
 from onnx import numpy_helper
