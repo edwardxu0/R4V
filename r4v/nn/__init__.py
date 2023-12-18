@@ -441,9 +441,13 @@ class Convolutional(Rescalable, Droppable):
             assert len(pad_op) == 2
             conv_op = node_list[1]
 
-        self.weight, self.bias, self.kernel_shape, self.strides, self.pads = get_conv_parameters(
-            conv_op, pad_op=pad_op
-        )
+        (
+            self.weight,
+            self.bias,
+            self.kernel_shape,
+            self.strides,
+            self.pads,
+        ) = get_conv_parameters(conv_op, pad_op=pad_op)
         self.padding = as_implicit_padding(self.pads)
         self.in_features = self.weight.shape[1]
         self.out_features = self.bias.shape[0]
@@ -594,9 +598,13 @@ class BatchNorm(Droppable):
         super().__init__(node_list)
         assert len(node_list) == 1
         batchnorm_op = node_list[0]
-        self.attributes, self.weight, self.bias, self.mean, self.var = get_batchnorm_parameters(
-            batchnorm_op
-        )
+        (
+            self.attributes,
+            self.weight,
+            self.bias,
+            self.mean,
+            self.var,
+        ) = get_batchnorm_parameters(batchnorm_op)
 
         self.in_features = self.out_features = self.weight.shape[0]
 
@@ -755,15 +763,23 @@ class ResidualBlock(ResidualConnection, Droppable, DroppableOperations):
         self.bn_var = [None, None]
         for i in range(2):
             conv_params = get_conv_parameters(conv_op[i], pad_op=pad_op[i])
-            self.conv_weight[i], self.conv_bias[i], self.conv_kernel_shape[
-                i
-            ], self.conv_strides[i], self.conv_pads[i] = conv_params
+            (
+                self.conv_weight[i],
+                self.conv_bias[i],
+                self.conv_kernel_shape[i],
+                self.conv_strides[i],
+                self.conv_pads[i],
+            ) = conv_params
             self.conv_padding[i] = as_implicit_padding(self.conv_pads[i])
             self.in_features[i] = self.conv_weight[i].shape[1]
             self.out_features[i] = self.conv_bias[i].shape[0]
-            self.bn_attributes[i], self.bn_weight[i], self.bn_bias[i], self.bn_mean[
-                i
-            ], self.bn_var[i] = get_batchnorm_parameters(batchnorm_op[i])
+            (
+                self.bn_attributes[i],
+                self.bn_weight[i],
+                self.bn_bias[i],
+                self.bn_mean[i],
+                self.bn_var[i],
+            ) = get_batchnorm_parameters(batchnorm_op[i])
         if activation_op[0].op_type.lower() == "relu":
             self.activation = "relu"
         assert self.activation == "relu"
@@ -1041,9 +1057,13 @@ class ResnetV2GlobalAveragePool(GlobalAveragePool):
         relu_op = node_list[1]
         pool_op = node_list[2]
 
-        self.bn_attributes, self.bn_weight, self.bn_bias, self.bn_mean, self.bn_var = get_batchnorm_parameters(
-            batchnorm_op
-        )
+        (
+            self.bn_attributes,
+            self.bn_weight,
+            self.bn_bias,
+            self.bn_mean,
+            self.bn_var,
+        ) = get_batchnorm_parameters(batchnorm_op)
         if relu_op[0].op_type.lower() == "relu":
             self.activation = "relu"
         assert self.activation == "relu"
@@ -1464,7 +1484,9 @@ class DNN:
             drop_layer(layer)
         return self
 
-    def add_layer(self, layer_id, layer_type=Layer, parameters=None, activation_function=None):
+    def add_layer(
+        self, layer_id, layer_type=Layer, parameters=None, activation_function=None
+    ):
         if isinstance(layer_type, str):
             if layer_type not in globals():
                 raise ValueError("Unknown layer type: %s" % layer_type)
@@ -1475,7 +1497,7 @@ class DNN:
             parameters = [parameters]
 
         layer_tuple = (layer_id, layer_type, activation_function, parameters)
-        if not hasattr(self, 'added_layers'):
+        if not hasattr(self, "added_layers"):
             self.added_layers = [layer_tuple]
         else:
             self.added_layers += [layer_tuple]
@@ -1486,15 +1508,21 @@ class DNN:
             layer_next = None
             postfix = uuid.uuid4()
             if layer_type == FullyConnected:
-                assert len(parameters) == 1, f"Wrong parameters for adding a {layer_type} layer at position {pos}: {parameters}"
+                assert (
+                    len(parameters) == 1
+                ), f"Wrong parameters for adding a {layer_type} layer at position {pos}: {parameters}"
 
                 nb_neurons = parameters[0]
                 gemm_node = onnx.helper.make_node(
                     "Gemm",
-                    inputs=[f'Gemm_{postfix}.input1', f'Gemm_{postfix}.weight', f'Gemm_{postfix}.bias'],
-                    outputs=[f'Gemm_{postfix}.output'],
+                    inputs=[
+                        f"Gemm_{postfix}.input1",
+                        f"Gemm_{postfix}.weight",
+                        f"Gemm_{postfix}.bias",
+                    ],
+                    outputs=[f"Gemm_{postfix}.output"],
                     # alpha=1.0,# beta=1.0,# transA=False,# transB=False,
-                    name=f'Gemm_{postfix}',
+                    name=f"Gemm_{postfix}",
                 )
 
                 # get output shape of the most recent non-dropped layer
@@ -1517,7 +1545,7 @@ class DNN:
                         break
 
                 weights_shape = (input_shape[1], nb_neurons)
-                bias_shape = (nb_neurons)
+                bias_shape = nb_neurons
                 dummy_weights = np.random.uniform(low=0.0, high=1.0, size=weights_shape)
                 dummy_weights = numpy_helper.from_array(dummy_weights)
                 dummy_bias = np.random.uniform(low=0.0, high=1.0, size=bias_shape)
@@ -1526,30 +1554,27 @@ class DNN:
                 node_list_fc = [gemm_node, None, dummy_weights, dummy_bias]
                 node_list = [node_list_fc]
 
-                if activation_function == 'relu':
+                if activation_function == "relu":
                     node_relu = onnx.helper.make_node(
-                       "Relu", inputs=[f'input_relu_{postfix}'], outputs=[f'output_relu_{postfix}'], name=f'relu_{postfix}')
+                        "Relu",
+                        inputs=[f"input_relu_{postfix}"],
+                        outputs=[f"output_relu_{postfix}"],
+                        name=f"relu_{postfix}",
+                    )
                     node_list_relu = [node_relu, None]
                     node_list += [node_list_relu]
                 new_layer = GemmFullyConnected(node_list)
 
             elif layer_type == Convolutional:
-                assert len(parameters) >= 3, f"Wrong parameters for adding a {layer_type} layer at position {pos}: {parameters}"
+                assert (
+                    len(parameters) >= 3
+                ), f"Wrong parameters for adding a {layer_type} layer at position {pos}: {parameters}"
 
                 nb_kernels = parameters[0]
                 kernel_size = parameters[1]
                 stride = parameters[2]
-                if len(parameters) == 4:
-                    assert parameters[3] in ['valid', 'VALID', 0], 'Supports VALID padding only for now.'
-                padding = 0
-
-                conv_node = onnx.helper.make_node(
-                    "Conv",
-                    inputs=[f'Conv_{postfix}.input1', f'Conv_{postfix}.weight', f'Conv_{postfix}.bias'],
-                    outputs=[f'Conv_{postfix}.output'],
-                    # alpha=1.0,# beta=1.0,# transA=False,# transB=False,
-                    name=f'Conv_{postfix}',
-                )
+                padding = parameters[3]
+                node_list = []
 
                 # get output shape of the most recent non-dropped layer
                 for i in reversed(range(0, pos)):
@@ -1560,11 +1585,25 @@ class DNN:
                         assert input_shape[0] == 1
                         assert input_shape[2] == input_shape[3]
                         break
-                # print('input_shape', input_shape)
-                shape = ((input_shape[2] - kernel_size + 2 * padding) // stride) + 1
-                output_shape = [1, nb_kernels, shape, shape]
-                # print('output_shape', output_shape)
 
+                #print("input_shape", input_shape)
+
+                if padding in ["valid", "VALID", 0]:
+                    # print("VALID padding!!!")
+                    padding = 0
+                    shape = ((input_shape[2] - kernel_size + 2 * padding) // stride) + 1
+                    output_shape = [1, nb_kernels, shape, shape]
+                    # print("output_shape", output_shape)
+
+                elif padding in ["same", "SAME", -1]:
+                    #print("SAME padding!!!")
+                    output_shape = [1, nb_kernels, input_shape[2], input_shape[3]]
+
+                    # print(conv_node)
+                else:
+                    raise NotImplementedError(f"Invalid padding style: {padding}")
+
+                #print("output_shape", output_shape)
                 # modify the input shape of next non-dropped layer
                 for i in range(pos, len(tmp_layers)):
                     layer_next = tmp_layers[i]
@@ -1574,26 +1613,50 @@ class DNN:
                         layer_next.input_shape = output_shape
                         break
 
-                dummy_weights = np.random.uniform(low=0.0, high=1.0, size=(nb_kernels,input_shape[1],kernel_size,kernel_size))
-                # print(dummy_weights.shape)
+                dummy_weights = np.random.uniform(
+                    low=0.0,
+                    high=1.0,
+                    size=(nb_kernels, input_shape[1], kernel_size, kernel_size),
+                )
                 dummy_weights = numpy_helper.from_array(dummy_weights)
-
                 dummy_bias = np.random.uniform(low=0.0, high=1.0, size=(nb_kernels))
-                # print(dummy_bias.shape)
                 dummy_bias = numpy_helper.from_array(dummy_bias)
 
-                node_list_conv = [conv_node, None, dummy_weights, dummy_bias]
-                node_list = [node_list_conv]
+                conv_node = onnx.helper.make_node(
+                    "Conv",
+                    inputs=[
+                        f"Conv_{postfix}.input1",
+                        f"Conv_{postfix}.weight",
+                        f"Conv_{postfix}.bias",
+                    ],
+                    outputs=[f"Conv_{postfix}.output"],
+                    # alpha=1.0,# beta=1.0,# transA=False,# transB=False,
+                    name=f"Conv_{postfix}",
+                )
 
-                if activation_function == 'relu':
+                node_list_conv = [conv_node, None, dummy_weights, dummy_bias]
+                node_list += [node_list_conv]
+
+                if activation_function == "relu":
                     node_relu = onnx.helper.make_node(
-                       "Relu", inputs=[f'input_relu_{postfix}'], outputs=[f'output_relu_{postfix}'], name=f'relu_{postfix}')
+                        "Relu",
+                        inputs=[f"input_relu_{postfix}"],
+                        outputs=[f"output_relu_{postfix}"],
+                        name=f"relu_{postfix}",
+                    )
                     node_list_relu = [node_relu, None]
                     node_list += [node_list_relu]
+
                 new_layer = Convolutional(node_list)
 
+                if padding in ["SAME", -1]:
+                    new_layer.input_shape = input_shape
+                    new_layer.replace_padding("SAME")
+
             else:
-                raise NotImplementedError(f"Adding layer of type: {layer_type} is not implemented yet.")
+                raise NotImplementedError(
+                    f"Adding layer of type: {layer_type} is not implemented yet."
+                )
 
             # set connections between the new layer and the layer before as well as the layer next to it
             assert layer_before is not None and layer_next is not None
@@ -1610,7 +1673,7 @@ class DNN:
             tmp_layers.insert(pos, new_layer)
 
         self.layers = tmp_layers
-        self.final_layer_index = len(self.layers)-1
+        self.final_layer_index = len(self.layers) - 1
 
         return self
 
@@ -1748,9 +1811,11 @@ class Net(nn.Module):
                     for cache_id in cache_ids
                 ]
             )
-        assert tuple(int(dim) for dim in x.size()[1:]) == tuple(self.input_shape[1:]), (
-            "shape of input (%s) is different than expected (%s)"
-            % (x.size(), self.input_shape)
+        assert tuple(int(dim) for dim in x.size()[1:]) == tuple(
+            self.input_shape[1:]
+        ), "shape of input (%s) is different than expected (%s)" % (
+            x.size(),
+            self.input_shape,
         )
         y = self.layers(x)
         if cache_ids is not None:
